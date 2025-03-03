@@ -1,24 +1,30 @@
-//
-//  ContentView.swift
-//  HomeGuard
-//
-//  Created by Chandru Vasudevan on 2/20/25.
-//
-
 import SwiftUI
 
 struct ContentView: View {
+    @State private var showSplash = true
+
     var body: some View {
-        VStack {
-            Image(systemName: "globe")
-                .imageScale(.large)
-                .foregroundStyle(.tint)
-            Text("Hello, world!")
+        ZStack {
+            if showSplash {
+                SplashScreenView()
+                    .transition(.opacity)
+            } else {
+                HomeGuardMainView()
+                    .transition(.opacity)
+            }
         }
-        .padding()
+        .onAppear {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                withAnimation {
+                    showSplash = false
+                }
+            }
+        }
     }
 }
 
-#Preview {
-    ContentView()
+struct ContentView_Previews: PreviewProvider {
+    static var previews: some View {
+        ContentView()
+    }
 }
