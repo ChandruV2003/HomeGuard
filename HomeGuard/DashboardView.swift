@@ -1,41 +1,24 @@
 import SwiftUI
 
-enum DeviceContextAction {
-    case favoriteToggle, edit, delete
-}
-
 struct DashboardView: View {
-    @State private var devices: [Device] = []  // Start empty
-    @State private var automationRules: [AutomationRule] = []  // Start empty
-    
+    @State private var devices: [Device] = []  // User-added devices
+    @State private var automationRules: [AutomationRule] = []  // Automation rules
+
     @StateObject var speechManager = SpeechManager()
     @StateObject var logManager = EventLogManager()
     
     @State private var showAddDevice = false
-    @State private var showAutomationRule = false
+    @State private var showAddAutomation = false
+    @State private var showEditAutomation: AutomationRule? = nil
+    @State private var deviceForEdit: Device? = nil
     @State private var showLog = false
-    @State private var selectedDevice: Device? = nil
-    @State private var editDevice: Device? = nil
     @State private var errorMessage: String = ""
-    
-    // Grouping
-    private var favoriteDevices: [Device] {
-        devices.filter { $0.isFavorite }
-    }
-    private var nonFavoriteDevices: [Device] {
-        devices.filter { !$0.isFavorite }
-    }
-    private var groupedNonFavorites: [DeviceType: [Device]] {
-        Dictionary(grouping: nonFavoriteDevices, by: { $0.deviceType })
-    }
-    private var sortedDeviceTypes: [DeviceType] {
-        [.light, .door, .sensor, .fan]
-    }
     
     var body: some View {
         NavigationView {
             VStack(spacing: 16) {
                 HeaderView(title: "HomeGuard Dashboard")
+                
                 if #available(iOS 15.0, *) {
                     VoiceCommandView(speechManager: speechManager)
                 } else {
@@ -49,34 +32,70 @@ struct DashboardView: View {
                     }
                     .padding(.horizontal)
                 }
+                
                 if !errorMessage.isEmpty {
                     ErrorBanner(message: errorMessage)
                         .transition(.move(edge: .top))
                 }
+                
                 ScrollView {
                     VStack(spacing: 16) {
-                        // Automation Area
-                        AutomationAreaView(automationRules: automationRules, onAdd: {
-                            if devices.isEmpty {
-                                showError("Please add a device before creating automations.")
-                            } else {
-                                showAutomationRule = true
-                            }
-                        }, onSelect: { rule in
-                            logManager.addLog("Selected automation: \(rule.name)")
-                        }, addEnabled: !devices.isEmpty)
+                        // Automations Area
+                        AutomationsAreaView(
+                            automationRules: automationRules,
+                            onAdd: {
+                                if devices.isEmpty {
+                                    showError("Please add a device before creating automations.")
+                                } else {
+                                    showAddAutomation = true
+                                }
+                            },
+                            onContextAction: { rule, action in
+                                switch action {
+                                case .edit:
+                                    showEditAutomation = rule
+                                case .delete:
+                                    if let index = automationRules.firstIndex(where: { $0.id == rule.id }) {
+                                        automationRules.remove(at: index)
+                                        logManager.addLog("Deleted automation: \(rule.name)")
+                                    }
+                                case .toggleOn:
+                                    logManager.addLog("\(rule.name) toggled on.")
+                                case .toggleOff:
+                                    logManager.addLog("\(rule.name) toggled off.")
+                                default:
+                                    break
+                                }
+                            },
+                            addEnabled: !devices.isEmpty
+                        )
                         
                         // Devices Area
-                        DevicesAreaView(devices: devices, onAdd: {
-                            showAddDevice = true
-                        }, onSelect: { device in
-                            selectedDevice = device
-                        }, onContextAction: { device, action in
-                            handleDeviceContextAction(device: device, action: action)
-                        })
+                        DevicesAreaView(
+                            devices: $devices,
+                            onAdd: { showAddDevice = true },
+                            onSelect: { device in
+                                // Tapping a device row does nothing extra.
+                            },
+                            onContextAction: { device, action in
+                                switch action {
+                                case .edit:
+                                    deviceForEdit = device
+                                case .delete:
+                                    if let index = devices.firstIndex(where: { $0.id == device.id }) {
+                                        devices.remove(at: index)
+                                        logManager.addLog("Deleted device: \(device.name)")
+                                    }
+                                default:
+                                    break
+                                }
+                            },
+                            logManager: logManager
+                        )
                     }
                     .padding(.vertical)
                 }
+                
                 VoiceControlButton(speechManager: speechManager)
             }
             .navigationTitle("Home")
@@ -90,7 +109,7 @@ struct DashboardView: View {
                             if devices.isEmpty {
                                 showError("Please add a device before creating automations.")
                             } else {
-                                showAutomationRule = true
+                                showAddAutomation = true
                             }
                         }) {
                             Label("Add Automation", systemImage: "bolt.circle")
@@ -113,40 +132,73 @@ struct DashboardView: View {
                     logManager.addLog("Added device: \(newDevice.name)")
                 }
             }
-            .sheet(isPresented: $showAutomationRule) {
-                AutomationRuleView { rule in
+            .sheet(isPresented: $showAddAutomation) {
+                AddAutomationView(inputDevices: devices.filter { device in
+                    return device.deviceType == .sensor ||
+                           device.deviceType == .temperature ||
+                           device.deviceType == .humidity ||
+                           device.deviceType == .motion
+                }) { rule in
                     automationRules.append(rule)
                     logManager.addLog("Added automation: \(rule.name)")
                 }
             }
-            .sheet(item: $selectedDevice) { device in
-                DeviceDetailView(device: binding(for: device), logManager: logManager)
+            .sheet(item: $showEditAutomation) { rule in
+                EditAutomationView(
+                    rule: rule,
+                    inputDevices: devices.filter { device in
+                        return device.deviceType == .sensor ||
+                               device.deviceType == .temperature ||
+                               device.deviceType == .humidity ||
+                               device.deviceType == .motion
+                    }
+                ) { updatedRule in
+                    if let index = automationRules.firstIndex(where: { $0.id == updatedRule.id }) {
+                        automationRules[index] = updatedRule
+                        logManager.addLog("Updated automation: \(updatedRule.name)")
+                    }
+                    showEditAutomation = nil
+                }
             }
-            .sheet(item: $editDevice) { device in
+            .sheet(item: $deviceForEdit) { device in
                 EditDeviceView(device: device) { updatedDevice in
                     if let index = devices.firstIndex(where: { $0.id == updatedDevice.id }) {
                         devices[index] = updatedDevice
                         logManager.addLog("Updated device: \(updatedDevice.name)")
                     }
-                    editDevice = nil
+                    deviceForEdit = nil
                 }
             }
             .sheet(isPresented: $showLog) {
                 EventLogView(logManager: logManager)
             }
-            .onReceive(Timer.publish(every: 1.0, on: .main, in: .common).autoconnect()) { _ in
-                let snapshot = devices
-                for snapshotDevice in snapshot {
-                    if let idx = devices.firstIndex(where: { $0.id == snapshotDevice.id }),
-                       devices.indices.contains(idx) {
-                        pollSensorData(for: snapshotDevice) { sensorData in
-                            DispatchQueue.main.async {
-                                if let sensorData = sensorData {
-                                    devices[idx].sensorData = sensorData
-                                    devices[idx].status = "\(sensorData.temperature)°F"
-                                    devices[idx].isOnline = true
-                                } else {
-                                    devices[idx].isOnline = false
+            .onReceive(Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()) { _ in
+                let currentDevices = devices  // Snapshot
+                for device in currentDevices {
+                    if let actualIndex = devices.firstIndex(where: { $0.id == device.id }) {
+                        if device.deviceType == .sensor ||
+                           device.deviceType == .temperature ||
+                           device.deviceType == .humidity {
+                            pollSensorData(for: device) { sensorData in
+                                DispatchQueue.main.async {
+                                    if let sensorData = sensorData {
+                                        devices[actualIndex].sensorData = sensorData
+                                        devices[actualIndex].status = "\(sensorData.temperature)°F"
+                                        devices[actualIndex].isOnline = true
+                                    } else if devices.indices.contains(actualIndex) {
+                                        devices[actualIndex].isOnline = false
+                                    }
+                                }
+                            }
+                        } else {
+                            NetworkManager.sendCommand(port: device.port, action: "status") { state in
+                                DispatchQueue.main.async {
+                                    if let state = state {
+                                        devices[actualIndex].status = state
+                                        devices[actualIndex].isOnline = true
+                                    } else if devices.indices.contains(actualIndex) {
+                                        devices[actualIndex].isOnline = false
+                                    }
                                 }
                             }
                         }
@@ -154,33 +206,7 @@ struct DashboardView: View {
                 }
             }
         }
-    }
-    
-    private func binding(for device: Device) -> Binding<Device> {
-        guard let index = devices.firstIndex(where: { $0.id == device.id }) else {
-            fatalError("Device not found")
-        }
-        return $devices[index]
-    }
-    
-    private func handleDeviceContextAction(device: Device, action: DeviceContextAction) {
-        switch action {
-        case .favoriteToggle:
-            if let idx = devices.firstIndex(where: { $0.id == device.id }) {
-                devices[idx].isFavorite.toggle()
-                let favText = devices[idx].isFavorite ? "marked as favorite" : "removed from favorites"
-                logManager.addLog("\(devices[idx].name) \(favText)")
-            }
-        case .edit:
-            editDevice = device
-        case .delete:
-            withAnimation {
-                if let idx = devices.firstIndex(where: { $0.id == device.id }) {
-                    logManager.addLog("Deleted device: \(devices[idx].name)")
-                    devices.remove(at: idx)
-                }
-            }
-        }
+        .navigationViewStyle(StackNavigationViewStyle())
     }
     
     private func showError(_ message: String) {
@@ -209,27 +235,6 @@ extension DashboardView {
         }
         return attr
     }
-}
-
-func pollSensorData(for device: Device, completion: @escaping (SensorData?) -> Void) {
-    guard let url = URL(string: "http://\(device.ipAddress)/sensor") else {
-        completion(nil)
-        return
-    }
-    URLSession.shared.dataTask(with: url) { data, response, error in
-        if let data = data {
-            let decoder = JSONDecoder()
-            do {
-                let sensorData = try decoder.decode(SensorData.self, from: data)
-                completion(sensorData)
-            } catch {
-                print("Error decoding sensor data: \(error)")
-                completion(nil)
-            }
-        } else {
-            completion(nil)
-        }
-    }.resume()
 }
 
 struct DashboardView_Previews: PreviewProvider {

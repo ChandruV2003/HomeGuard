@@ -16,7 +16,7 @@ struct HomeGuardApp: App {
     
     var body: some Scene {
         WindowGroup {
-            HomeGuardMainView()
+            ContentView()
         }
     }
 }

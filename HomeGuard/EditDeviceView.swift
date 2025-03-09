@@ -20,7 +20,7 @@ struct EditDeviceView: View {
                             Text(port).tag(port)
                         }
                     }
-                    Text("IP: \(device.ipAddress)")
+                    Text("IP Address: \(device.ipAddress)")
                         .foregroundColor(.gray)
                 }
             }

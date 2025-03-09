@@ -6,6 +6,9 @@ struct AddDeviceView: View {
     @State private var selectedType: DeviceType = .light
     @State private var selectedPort: String = availablePorts[.light]?.first ?? ""
     
+    // IP Address is not editable.
+    let ipAddress: String = globalESPIP
+    
     var onSave: (Device) -> Void
     
     var body: some View {
@@ -30,13 +33,27 @@ struct AddDeviceView: View {
                             Text(port).tag(port)
                         }
                     }
+                    Text("IP Address: \(ipAddress)")
+                        .foregroundColor(.gray)
                 }
             }
             .navigationTitle("Add New Device")
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
-                        let newDevice = Device.create(name: name, status: "Unknown", deviceType: selectedType, port: selectedPort)
+                        let newDevice = Device(
+                            id: UUID(),
+                            name: name,
+                            ipAddress: ipAddress,
+                            port: selectedPort,
+                            status: "Off",
+                            sensorData: nil,
+                            isOn: false,
+                            isOnline: false,  // Start as offline.
+                            deviceType: selectedType,
+                            group: nil,
+                            isFavorite: false
+                        )
                         onSave(newDevice)
                         dismiss()
                     }

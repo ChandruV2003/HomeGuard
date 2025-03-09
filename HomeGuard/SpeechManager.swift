@@ -2,22 +2,6 @@ import Foundation
 import Speech
 import AVFoundation
 
-func sendCommand(_ command: String, for deviceIP: String, completion: @escaping (Bool) -> Void = { _ in }) {
-    guard let url = URL(string: "http://\(deviceIP)/command?act=\(command)") else {
-        completion(false)
-        return
-    }
-    URLSession.shared.dataTask(with: url) { data, response, error in
-        if let error = error {
-            print("Error sending command: \(error.localizedDescription)")
-            completion(false)
-        } else {
-            print("Command \(command) sent successfully to \(deviceIP).")
-            completion(true)
-        }
-    }.resume()
-}
-
 class SpeechManager: ObservableObject {
     @Published var recognizedText: String = "Awaiting command..."
     @Published var commandRecognized: Bool = false
@@ -28,7 +12,7 @@ class SpeechManager: ObservableObject {
 
     private var audioEngine = AVAudioEngine()
     private var recognitionTask: SFSpeechRecognitionTask?
-    private var speechRecognizer = SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
+    private var speechRecognizer: SFSpeechRecognizer? = SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
     private var request: SFSpeechAudioBufferRecognitionRequest?
 
     func startListening() {
@@ -37,7 +21,7 @@ class SpeechManager: ObservableObject {
             print("Unable to create request")
             return
         }
-        guard let speechRecognizer = speechRecognizer, speechRecognizer.isAvailable else {
+        guard let recognizer = speechRecognizer, recognizer.isAvailable else {
             print("Speech recognizer not available")
             return
         }
@@ -61,10 +45,10 @@ class SpeechManager: ObservableObject {
             print("Audio engine failed: \(error.localizedDescription)")
         }
         isListening = true
-        recognitionTask = speechRecognizer.recognitionTask(with: request) { [weak self] result, error in
-            if let result = result {
-                self?.recognizedText = result.bestTranscription.formattedString
-                self?.processCommand(result.bestTranscription.formattedString)
+        recognitionTask = recognizer.recognitionTask(with: request) { [weak self] result, error in
+            if let result = result, let transcription = result.bestTranscription.formattedString as String? {
+                self?.recognizedText = transcription
+                self?.processCommand(transcription)
             }
             if let error = error {
                 print("Recognition error: \(error.localizedDescription)")
@@ -88,23 +72,35 @@ class SpeechManager: ObservableObject {
 
         if lowerText.contains("light on") {
             commandSent = true
-            sendCommand("lightOn", for: "192.168.1.101") { success in
+            NetworkManager.sendCommand(port: "D1", action: "lightOn") { state in
                 DispatchQueue.main.async {
-                    self.feedbackMessage = success ? "Lights turned on" : "Failed to turn on lights"
+                    if let state = state {
+                        self.feedbackMessage = "Lights turned \(state)"
+                    } else {
+                        self.feedbackMessage = "Failed to turn on lights"
+                    }
                 }
             }
         } else if lowerText.contains("light off") {
             commandSent = true
-            sendCommand("lightOff", for: "192.168.1.101") { success in
+            NetworkManager.sendCommand(port: "D1", action: "lightOff") { state in
                 DispatchQueue.main.async {
-                    self.feedbackMessage = success ? "Lights turned off" : "Failed to turn off lights"
+                    if let state = state {
+                        self.feedbackMessage = "Lights turned \(state)"
+                    } else {
+                        self.feedbackMessage = "Failed to turn off lights"
+                    }
                 }
             }
         } else if lowerText.contains("open garage") {
             commandSent = true
-            sendCommand("garageOpen", for: "192.168.1.102") { success in
+            NetworkManager.sendCommand(port: "D4", action: "garageOpen") { state in
                 DispatchQueue.main.async {
-                    self.feedbackMessage = success ? "Garage opened" : "Failed to open garage"
+                    if let state = state {
+                        self.feedbackMessage = "Garage \(state)"
+                    } else {
+                        self.feedbackMessage = "Failed to open garage"
+                    }
                 }
             }
         }

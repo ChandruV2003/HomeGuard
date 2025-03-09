@@ -3,59 +3,32 @@ import SwiftUI
 struct PowerButton: View {
     @Binding var device: Device
     @ObservedObject var logManager: EventLogManager
-    
+
     var body: some View {
         Button(action: {
             guard device.isOnline else { return }
-            let newState = !device.isOn
-            device.isOn = newState
-            let command: String
-            switch device.deviceType {
-            case .light, .fan:
-                command = newState ? "lightOn" : "lightOff"
-            case .door:
-                command = newState ? "garageOpen" : "garageClose"
-            default:
-                command = ""
-            }
-            if !command.isEmpty {
-                sendCommand(command, for: device.ipAddress) { success in
-                    if success {
-                        device.status = newState ? "On" : "Off"
-                        logManager.addLog("\(device.name) turned \(newState ? "On" : "Off")")
+            NetworkManager.sendCommand(port: device.port, action: "toggle") { state in
+                DispatchQueue.main.async {
+                    if let state = state {
+                        // Invert the state since the hardware is active-low:
+                        let actualOn = (state == "On") ? false : true
+                        device.status = actualOn ? "On" : "Off"
+                        device.isOn = actualOn
+                        logManager.addLog("\(device.name) is now \(device.status)")
+                    } else {
+                        logManager.addLog("Failed to update \(device.name)")
                     }
                 }
             }
         }) {
-            Text(buttonLabel)
-                .font(.subheadline)
-                .padding(8)
-                .frame(minWidth: 60)
-                .background(device.isOnline ? (device.isOn ? Color.green.opacity(0.7) : Color.gray.opacity(0.7)) : Color.clear)
-                .cornerRadius(8)
-                .overlay(
-                    Group {
-                        if !device.isOnline {
-                            RoundedRectangle(cornerRadius: 8)
-                                .stroke(style: StrokeStyle(lineWidth: 2, dash: [5]))
-                                .foregroundColor(.red)
-                        }
-                    }
-                )
-                .foregroundColor(device.isOnline ? .white : .red)
+            Image(systemName: "power")
+                .font(.title2)
+                .padding(10)
+                .background(device.isOn ? Color.green : Color.gray)
+                .clipShape(Circle())
+                .foregroundColor(.white)
         }
         .disabled(!device.isOnline)
-    }
-    
-    private var buttonLabel: String {
-        switch device.deviceType {
-        case .light, .fan:
-            return device.isOn ? "On" : "Off"
-        case .door:
-            return device.isOn ? "Close" : "Open"
-        default:
-            return ""
-        }
     }
 }
 

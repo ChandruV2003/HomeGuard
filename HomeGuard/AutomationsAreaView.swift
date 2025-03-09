@@ -1,13 +1,14 @@
 import SwiftUI
 
-struct AutomationAreaView: View {
+struct AutomationsAreaView: View {
     var automationRules: [AutomationRule]
     var onAdd: () -> Void
-    var onSelect: (AutomationRule) -> Void
-    var addEnabled: Bool  // True only if there is at least one device
+    var onContextAction: (AutomationRule, AutomationContextAction) -> Void
+    var addEnabled: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
+            // Header banner for Automations (blue outline)
             HStack {
                 Image(systemName: "bolt.fill")
                     .foregroundColor(.blue)
@@ -38,31 +39,43 @@ struct AutomationAreaView: View {
                     .foregroundColor(.gray)
                     .padding(.horizontal)
             } else {
-                ForEach(automationRules.indices, id: \.self) { i in
-                    let rule = automationRules[i]
-                    Button(action: { onSelect(rule) }) {
-                        HStack {
-                            Text(rule.name)
-                                .font(.subheadline)
-                            Spacer()
-                            Text(rule.condition)
-                                .font(.caption)
-                                .foregroundColor(.gray)
-                        }
+                ForEach(automationRules) { rule in
+                    AutomationRowView(
+                        rule: rule,
+                        onToggle: { newState in
+                            onContextAction(rule, newState ? .toggleOn : .toggleOff)
+                        },
+                        onEdit: { onContextAction(rule, .edit) },
+                        onDelete: { onContextAction(rule, .delete) }
+                    )
+                    Divider()
+                        .background(Color.blue)
                         .padding(.horizontal)
-                    }
-                    if i < automationRules.count - 1 {
-                        Divider()
-                            .background(Color.blue)
-                    }
                 }
             }
         }
     }
 }
 
-struct AutomationAreaView_Previews: PreviewProvider {
+struct AutomationsAreaView_Previews: PreviewProvider {
     static var previews: some View {
-        AutomationAreaView(automationRules: [], onAdd: {}, onSelect: { _ in }, addEnabled: true)
+        AutomationsAreaView(
+            automationRules: [
+                AutomationRule(
+                    id: UUID(),
+                    name: "Turn on Fan",
+                    condition: "Temp > 80°F",
+                    action: "Fan On",
+                    activeDays: "M,Tu,W,Th,F",
+                    triggerEnabled: true,
+                    triggerTime: Date()
+                )
+            ],
+            onAdd: { print("Add tapped") },
+            onContextAction: { rule, action in
+                print("\(rule.name) context action: \(action)")
+            },
+            addEnabled: true
+        )
     }
 }
