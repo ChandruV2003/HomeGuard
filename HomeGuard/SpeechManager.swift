@@ -3,11 +3,15 @@ import Speech
 import AVFoundation
 
 class SpeechManager: ObservableObject {
-    @Published var recognizedText: String = "Awaiting command..."
+    @Published var recognizedText: String = ""
     @Published var commandRecognized: Bool = false
     @Published var feedbackMessage: String = ""
     @Published var isListening: Bool = false
 
+    // New properties to hold the current devices and automations.
+    @Published var currentDevices: [Device] = []
+    @Published var currentAutomations: [AutomationRule] = []
+    
     let magicKeywords = ["open", "close", "turn on", "turn off", "change"]
 
     private var audioEngine = AVAudioEngine()
@@ -46,9 +50,10 @@ class SpeechManager: ObservableObject {
         }
         isListening = true
         recognitionTask = recognizer.recognitionTask(with: request) { [weak self] result, error in
-            if let result = result, let transcription = result.bestTranscription.formattedString as String? {
-                self?.recognizedText = transcription
-                self?.processCommand(transcription)
+            if let result = result {
+                self?.recognizedText = result.bestTranscription.formattedString
+                // You can optionally call processCommand here for continuous updates,
+                // but to avoid duplicate commands, you might want to debounce or only process on release.
             }
             if let error = error {
                 print("Recognition error: \(error.localizedDescription)")
@@ -62,49 +67,57 @@ class SpeechManager: ObservableObject {
         recognitionTask?.cancel()
         recognitionTask = nil
         request = nil
-        recognizedText = "Awaiting command..."
+        recognizedText = ""
         isListening = false
     }
 
-    private func processCommand(_ text: String) {
+    /// Processes the final recognized text and triggers commands dynamically.
+    func processCommand(_ text: String) {
         let lowerText = text.lowercased()
         var commandSent = false
-
-        if lowerText.contains("light on") {
-            commandSent = true
-            NetworkManager.sendCommand(port: "D1", action: "lightOn") { state in
-                DispatchQueue.main.async {
-                    if let state = state {
-                        self.feedbackMessage = "Lights turned \(state)"
-                    } else {
-                        self.feedbackMessage = "Failed to turn on lights"
+        
+        // Example: If command contains "turn on" and "light", find a device with "light" in its name.
+        if lowerText.contains("turn on") && lowerText.contains("light") {
+            if let device = currentDevices.first(where: { $0.name.lowercased().contains("light") }) {
+                commandSent = true
+                NetworkManager.sendCommand(port: device.port, action: "lightOn") { state in
+                    DispatchQueue.main.async {
+                        if let state = state {
+                            self.feedbackMessage = "Lights turned \(state)"
+                        } else {
+                            self.feedbackMessage = "Failed to turn on lights"
+                        }
                     }
                 }
             }
-        } else if lowerText.contains("light off") {
-            commandSent = true
-            NetworkManager.sendCommand(port: "D1", action: "lightOff") { state in
-                DispatchQueue.main.async {
-                    if let state = state {
-                        self.feedbackMessage = "Lights turned \(state)"
-                    } else {
-                        self.feedbackMessage = "Failed to turn off lights"
+        } else if lowerText.contains("turn off") && lowerText.contains("light") {
+            if let device = currentDevices.first(where: { $0.name.lowercased().contains("light") }) {
+                commandSent = true
+                NetworkManager.sendCommand(port: device.port, action: "lightOff") { state in
+                    DispatchQueue.main.async {
+                        if let state = state {
+                            self.feedbackMessage = "Lights turned \(state)"
+                        } else {
+                            self.feedbackMessage = "Failed to turn off lights"
+                        }
                     }
                 }
             }
-        } else if lowerText.contains("open garage") {
-            commandSent = true
-            NetworkManager.sendCommand(port: "D4", action: "garageOpen") { state in
-                DispatchQueue.main.async {
-                    if let state = state {
-                        self.feedbackMessage = "Garage \(state)"
-                    } else {
-                        self.feedbackMessage = "Failed to open garage"
+        } else if lowerText.contains("open") && lowerText.contains("garage") {
+            if let device = currentDevices.first(where: { $0.name.lowercased().contains("garage") }) {
+                commandSent = true
+                NetworkManager.sendCommand(port: device.port, action: "garageOpen") { state in
+                    DispatchQueue.main.async {
+                        if let state = state {
+                            self.feedbackMessage = "Garage \(state)"
+                        } else {
+                            self.feedbackMessage = "Failed to open garage"
+                        }
                     }
                 }
             }
         }
-
+        
         if commandSent {
             DispatchQueue.main.async {
                 self.commandRecognized = true

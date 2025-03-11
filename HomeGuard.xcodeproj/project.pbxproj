@@ -27,6 +27,7 @@
 		DB33DB942D6839B7006EA971 /* HomeGuard.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = HomeGuard.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		DB33DBA42D6839B8006EA971 /* HomeGuardTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = HomeGuardTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		DB33DBAE2D6839B8006EA971 /* HomeGuardUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = HomeGuardUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		DB812C512D80C07C00F1CDD6 /* HomeGuard.xctestplan */ = {isa = PBXFileReference; lastKnownFileType = text; path = HomeGuard.xctestplan; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -75,6 +76,7 @@
 		DB33DB8B2D6839B7006EA971 = {
 			isa = PBXGroup;
 			children = (
+				DB812C512D80C07C00F1CDD6 /* HomeGuard.xctestplan */,
 				DB33DB962D6839B7006EA971 /* HomeGuard */,
 				DB33DBA72D6839B8006EA971 /* HomeGuardTests */,
 				DB33DBB12D6839B8006EA971 /* HomeGuardUITests */,

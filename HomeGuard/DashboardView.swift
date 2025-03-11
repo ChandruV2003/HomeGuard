@@ -19,20 +19,6 @@ struct DashboardView: View {
             VStack(spacing: 16) {
                 HeaderView(title: "HomeGuard Dashboard")
                 
-                if #available(iOS 15.0, *) {
-                    VoiceCommandView(speechManager: speechManager)
-                } else {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Voice Command:")
-                            .font(.headline)
-                        Text(speechManager.recognizedText)
-                            .padding()
-                            .background(Color(.systemGray6))
-                            .cornerRadius(8)
-                    }
-                    .padding(.horizontal)
-                }
-                
                 if !errorMessage.isEmpty {
                     ErrorBanner(message: errorMessage)
                         .transition(.move(edge: .top))

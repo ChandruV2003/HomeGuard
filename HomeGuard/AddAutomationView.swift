@@ -2,24 +2,17 @@ import SwiftUI
 
 struct AddAutomationView: View {
     @Environment(\.dismiss) var dismiss
-    // List of available input sensors (only inputs: sensor, temperature, humidity, motion)
     var inputDevices: [Device]
     
     @State private var ruleName: String = ""
-    @State private var selectedSensor: Device? = nil
-    
-    // For temperature/humidity sensors:
+    @State private var selectedSensor: Device?
     @State private var comparison: String = "Greater Than"
     @State private var thresholdValue: Double = 70
-    
-    // Always show trigger time; user can enable/disable it.
     @State private var useTriggerTime: Bool = true
     @State private var triggerTime: Date = Date()
-    
-    // Active days toggles for each day.
     @State private var activeDays: [Bool] = Array(repeating: false, count: 7)
-    let dayAbbreviations: [String] = ["M", "Tu", "W", "Th", "F", "Sa", "Su"]
     
+    let dayAbbreviations = ["M", "Tu", "W", "Th", "F", "Sa", "Su"]
     let comparisonOptions = ["Greater Than", "Less Than"]
     
     var onSave: (AutomationRule) -> Void
@@ -27,110 +20,129 @@ struct AddAutomationView: View {
     var body: some View {
         NavigationView {
             Form {
-                Section(header: Text("Automation Details")) {
-                    TextField("Rule Name", text: $ruleName)
-                    if !inputDevices.isEmpty {
-                        Picker("Input Sensor", selection: $selectedSensor) {
-                            Text("None").tag(Device?.none)
-                            ForEach(inputDevices) { device in
-                                Text(device.name).tag(Optional(device))
-                            }
-                        }
-                    }
-                }
-                
-                Section(header: Text("Condition")) {
-                    if let sensor = selectedSensor {
-                        if sensor.deviceType == .temperature || sensor.deviceType == .humidity {
-                            Picker("Comparison", selection: $comparison) {
-                                ForEach(comparisonOptions, id: \.self) { option in
-                                    Text(option)
-                                }
-                            }
-                            Slider(value: $thresholdValue, in: sensor.deviceType == .temperature ? 0...120 : 0...100, step: 1)
-                            Text("Threshold: \(Int(thresholdValue))\(sensor.deviceType == .temperature ? "°F" : "%")")
-                        } else if sensor.deviceType == .motion {
-                            Text("Trigger on Motion Detected")
-                        }
-                    }
-                }
-                
-                Section(header: Text("Trigger Time")) {
-                    Toggle("Enable Trigger Time", isOn: $useTriggerTime)
-                    DatePicker("Time", selection: $triggerTime, displayedComponents: .hourAndMinute)
-                        .datePickerStyle(WheelDatePickerStyle())
-                }
-                
-                Section(header: Text("Active Days")) {
-                    HStack {
-                        ForEach(0..<dayAbbreviations.count, id: \.self) { index in
-                            DayToggleView(isActive: $activeDays[index], day: dayAbbreviations[index])
-                        }
-                    }
-                }
+                automationDetailsSection
+                conditionSection
+                triggerTimeSection
+                activeDaysSection
             }
             .navigationTitle("Add Automation")
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") {
-                        let activeDayString = dayAbbreviations.enumerated()
-                            .filter { activeDays[$0.offset] }
-                            .map { $0.element }
-                            .joined(separator: ",")
-                        
-                        var conditionString = ""
-                        if let sensor = selectedSensor {
-                            if sensor.deviceType == .temperature || sensor.deviceType == .humidity {
-                                conditionString = "\(comparison) \(Int(thresholdValue))"
-                            } else if sensor.deviceType == .motion {
-                                conditionString = "Motion Detected"
-                            }
-                        }
-                        
-                        let newRule = AutomationRule(
-                            id: UUID(),
-                            name: ruleName,
-                            condition: conditionString,
-                            action: "Execute",
-                            activeDays: activeDayString,
-                            triggerEnabled: useTriggerTime,
-                            triggerTime: triggerTime
-                        )
-                        onSave(newRule)
-                        dismiss()
+            .toolbar { addCancelToolbar }
+        }
+    }
+    
+    // MARK: - Subviews
+    private var automationDetailsSection: some View {
+        Section(header: Text("Automation Details")) {
+            TextField("Rule Name", text: $ruleName)
+            if !inputDevices.isEmpty {
+                Picker("Input Sensor", selection: $selectedSensor) {
+                    Text("None").tag(Device?.none)
+                    ForEach(inputDevices) { device in
+                        Text(device.name).tag(Optional(device))
                     }
-                }
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
                 }
             }
         }
     }
-}
-
-struct DayToggleView: View {
-    @Binding var isActive: Bool
-    var day: String
     
-    var body: some View {
-        Button(action: {
-            isActive.toggle()
-            print("Day \(day) toggled to \(isActive)")
-        }) {
-            Text(day)
-                .font(.caption)
-                .frame(width: 30, height: 30)
-                .background(isActive ? Color.blue : Color.gray.opacity(0.3))
-                .clipShape(Circle())
-                .foregroundColor(isActive ? .white : .black)
+    private var conditionSection: some View {
+        Group {
+            if let sensor = selectedSensor, (sensor.deviceType == .temperature || sensor.deviceType == .humidity) {
+                Section(header: Text("Condition")) {
+                    Picker("Comparison", selection: $comparison) {
+                        ForEach(comparisonOptions, id: \.self) { Text($0) }
+                    }
+                    Slider(value: $thresholdValue, in: sensor.deviceType == .temperature ? 0...120 : 0...100, step: 1)
+                    Text("Threshold: \(Int(thresholdValue))\(sensor.deviceType == .temperature ? "°F" : "%")")
+                }
+            }
         }
+    }
+    
+    private var triggerTimeSection: some View {
+        Section(header: Text("Trigger Time")) {
+            Toggle("Enable Trigger Time", isOn: $useTriggerTime)
+            if useTriggerTime {
+                DatePicker("Time", selection: $triggerTime, displayedComponents: .hourAndMinute)
+                    .datePickerStyle(WheelDatePickerStyle())
+            }
+        }
+    }
+    
+    // Inside AddAutomationView
+    private var activeDaysSection: some View {
+        Section(header: Text("Active Days")) {
+            HStack {
+                ForEach(0..<dayAbbreviations.count, id: \.self) { index in
+                    Button(action: {
+                        activeDays[index].toggle() // Direct toggle (works with SwiftUI 5+)
+                    }) {
+                        Text(dayAbbreviations[index])
+                            .font(.caption)
+                            .frame(width: 30, height: 30)
+                            .background(activeDays[index] ? Color.blue : Color.gray.opacity(0.3))
+                            .clipShape(Circle())
+                            .foregroundColor(activeDays[index] ? .white : .black)
+                    }
+                    .buttonStyle(PlainButtonStyle()) // Fix tap area
+                    .contentShape(Circle()) // Ensure entire circle is tappable
+                }
+            }
+        }
+    }
+    
+    private var addCancelToolbar: some ToolbarContent {
+        Group {
+            ToolbarItem(placement: .confirmationAction) {
+                Button("Add") {
+                    saveAutomation()
+                }
+            }
+            ToolbarItem(placement: .cancellationAction) {
+                Button("Cancel") { dismiss() }
+            }
+        }
+    }
+    
+    // MARK: - Methods
+    private func saveAutomation() {
+        let activeDayString = dayAbbreviations.enumerated()
+            .filter { activeDays[$0.offset] }
+            .map { $0.element }
+            .joined(separator: ",")
+        
+        var condition = ""
+        if let sensor = selectedSensor {
+            switch sensor.deviceType {
+            case .temperature, .humidity:
+                condition = "\(comparison) \(Int(thresholdValue))"
+            case .motion:
+                condition = "Motion Detected"
+            default: break
+            }
+        }
+        
+        let newRule = AutomationRule(
+            id: UUID(),
+            name: ruleName,
+            condition: condition,
+            action: "Execute",
+            activeDays: activeDayString,
+            triggerEnabled: useTriggerTime,
+            triggerTime: triggerTime
+        )
+        onSave(newRule)
+        dismiss()
     }
 }
 
 struct AddAutomationView_Previews: PreviewProvider {
     static var previews: some View {
-        AddAutomationView(inputDevices: []) { rule in
-            print(rule)
+        // For preview, we create a sample device to populate the picker.
+        let sampleDevice = Device.create(name: "Temperature Sensor", status: "Off", deviceType: .temperature, port: availablePorts[.temperature]?.first ?? "")
+        return AddAutomationView(inputDevices: [sampleDevice]) { rule in
+            print("New rule added: \(rule)")
         }
     }
 }
+

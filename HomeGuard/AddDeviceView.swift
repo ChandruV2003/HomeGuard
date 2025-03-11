@@ -40,7 +40,7 @@ struct AddDeviceView: View {
             .navigationTitle("Add New Device")
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") {
+                    Button("Add") {
                         let newDevice = Device(
                             id: UUID(),
                             name: name,

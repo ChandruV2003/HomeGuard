@@ -45,7 +45,7 @@ struct DeviceRowView: View {
             Button(action: onEdit) {
                 Label("Edit", systemImage: "pencil")
             }
-            Button(role: .destructive, action: onDelete) {
+            Button(action: onDelete) {
                 Label("Delete", systemImage: "trash")
                     .foregroundColor(.red)
             }
@@ -66,4 +66,3 @@ struct DeviceRowView_Previews: PreviewProvider {
         .padding()
     }
 }
-

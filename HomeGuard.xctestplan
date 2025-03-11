@@ -1,0 +1,37 @@
+{
+  "configurations" : [
+    {
+      "id" : "E847279E-EAC2-48E1-9FF3-88304F6A1948",
+      "name" : "Test Scheme Action",
+      "options" : {
+
+      }
+    }
+  ],
+  "defaultOptions" : {
+    "targetForVariableExpansion" : {
+      "containerPath" : "container:HomeGuard.xcodeproj",
+      "identifier" : "DB33DB932D6839B7006EA971",
+      "name" : "HomeGuard"
+    }
+  },
+  "testTargets" : [
+    {
+      "parallelizable" : true,
+      "target" : {
+        "containerPath" : "container:HomeGuard.xcodeproj",
+        "identifier" : "DB33DBA32D6839B8006EA971",
+        "name" : "HomeGuardTests"
+      }
+    },
+    {
+      "parallelizable" : true,
+      "target" : {
+        "containerPath" : "container:HomeGuard.xcodeproj",
+        "identifier" : "DB33DBAD2D6839B8006EA971",
+        "name" : "HomeGuardUITests"
+      }
+    }
+  ],
+  "version" : 1
+}

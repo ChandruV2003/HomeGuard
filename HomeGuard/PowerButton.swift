@@ -10,7 +10,7 @@ struct PowerButton: View {
             NetworkManager.sendCommand(port: device.port, action: "toggle") { state in
                 DispatchQueue.main.async {
                     if let state = state {
-                        // Invert the state since the hardware is active-low:
+                        // Invert the logic: if firmware returns "On", then actualOn is false, and vice versa.
                         let actualOn = (state == "On") ? false : true
                         device.status = actualOn ? "On" : "Off"
                         device.isOn = actualOn
@@ -24,7 +24,8 @@ struct PowerButton: View {
             Image(systemName: "power")
                 .font(.title2)
                 .padding(10)
-                .background(device.isOn ? Color.green : Color.gray)
+                // Background: if device is online, green if on, gray if off; offline is red.
+                .background(device.isOnline ? (device.isOn ? Color.green : Color.gray) : Color.red)
                 .clipShape(Circle())
                 .foregroundColor(.white)
         }
