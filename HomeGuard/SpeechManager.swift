@@ -7,18 +7,18 @@ class SpeechManager: ObservableObject {
     @Published var commandRecognized: Bool = false
     @Published var feedbackMessage: String = ""
     @Published var isListening: Bool = false
-
-    // New properties to hold the current devices and automations.
+    
+    // Dynamic lists (updated by DashboardView via onChange)
     @Published var currentDevices: [Device] = []
     @Published var currentAutomations: [AutomationRule] = []
     
     let magicKeywords = ["open", "close", "turn on", "turn off", "change"]
-
+    
     private var audioEngine = AVAudioEngine()
     private var recognitionTask: SFSpeechRecognitionTask?
     private var speechRecognizer: SFSpeechRecognizer? = SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
     private var request: SFSpeechAudioBufferRecognitionRequest?
-
+    
     func startListening() {
         request = SFSpeechAudioBufferRecognitionRequest()
         guard let request = request else {
@@ -29,6 +29,7 @@ class SpeechManager: ObservableObject {
             print("Speech recognizer not available")
             return
         }
+        
         let audioSession = AVAudioSession.sharedInstance()
         do {
             try audioSession.setCategory(.record, mode: .measurement, options: .duckOthers)
@@ -36,12 +37,14 @@ class SpeechManager: ObservableObject {
         } catch {
             print("Audio session error: \(error.localizedDescription)")
         }
+        
         audioEngine = AVAudioEngine()
         let node = audioEngine.inputNode
         let recordingFormat = node.inputFormat(forBus: 0)
         node.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { [weak self] buffer, _ in
             self?.request?.append(buffer)
         }
+        
         audioEngine.prepare()
         do {
             try audioEngine.start()
@@ -49,83 +52,73 @@ class SpeechManager: ObservableObject {
             print("Audio engine failed: \(error.localizedDescription)")
         }
         isListening = true
+        
         recognitionTask = recognizer.recognitionTask(with: request) { [weak self] result, error in
+            guard let self = self else { return }
             if let result = result {
-                self?.recognizedText = result.bestTranscription.formattedString
-                // You can optionally call processCommand here for continuous updates,
-                // but to avoid duplicate commands, you might want to debounce or only process on release.
+                self.recognizedText = result.bestTranscription.formattedString
+                if result.isFinal {
+                    print("Final transcription: \(self.recognizedText)")
+                    self.processCommand(self.recognizedText)
+                    // Use a longer delay (e.g., 1.0 second) to allow final processing.
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                        if self.audioEngine.isRunning {
+                            self.stopListening()
+                        }
+                    }
+                }
             }
             if let error = error {
-                print("Recognition error: \(error.localizedDescription)")
+                let nsError = error as NSError
+                if nsError.domain == "com.apple.SFSpeechRecognitionErrorDomain" && nsError.code == 216 {
+                    print("Recognition request was canceled.")
+                } else if nsError.localizedDescription.contains("No speech detected") && !self.recognizedText.isEmpty {
+                    // Valid final transcription exists, so ignore this error.
+                } else {
+                    print("Recognition error: \(error.localizedDescription)")
+                }
             }
         }
     }
-
+    
     func stopListening() {
         audioEngine.stop()
         audioEngine.inputNode.removeTap(onBus: 0)
         recognitionTask?.cancel()
         recognitionTask = nil
         request = nil
-        recognizedText = ""
+        recognizedText = "" // Clear the preview text here if desired.
         isListening = false
     }
-
-    /// Processes the final recognized text and triggers commands dynamically.
+    
+    /// Evaluates the final recognized text and posts a notification if a command is found.
     func processCommand(_ text: String) {
         let lowerText = text.lowercased()
-        var commandSent = false
+        var command: String? = nil
         
-        // Example: If command contains "turn on" and "light", find a device with "light" in its name.
+        // Example matching: Use flexible matching with keywords.
         if lowerText.contains("turn on") && lowerText.contains("light") {
-            if let device = currentDevices.first(where: { $0.name.lowercased().contains("light") }) {
-                commandSent = true
-                NetworkManager.sendCommand(port: device.port, action: "lightOn") { state in
-                    DispatchQueue.main.async {
-                        if let state = state {
-                            self.feedbackMessage = "Lights turned \(state)"
-                        } else {
-                            self.feedbackMessage = "Failed to turn on lights"
-                        }
-                    }
-                }
-            }
+            command = "turn on light"
         } else if lowerText.contains("turn off") && lowerText.contains("light") {
-            if let device = currentDevices.first(where: { $0.name.lowercased().contains("light") }) {
-                commandSent = true
-                NetworkManager.sendCommand(port: device.port, action: "lightOff") { state in
-                    DispatchQueue.main.async {
-                        if let state = state {
-                            self.feedbackMessage = "Lights turned \(state)"
-                        } else {
-                            self.feedbackMessage = "Failed to turn off lights"
-                        }
-                    }
-                }
-            }
+            command = "turn off light"
         } else if lowerText.contains("open") && lowerText.contains("garage") {
-            if let device = currentDevices.first(where: { $0.name.lowercased().contains("garage") }) {
-                commandSent = true
-                NetworkManager.sendCommand(port: device.port, action: "garageOpen") { state in
-                    DispatchQueue.main.async {
-                        if let state = state {
-                            self.feedbackMessage = "Garage \(state)"
-                        } else {
-                            self.feedbackMessage = "Failed to open garage"
-                        }
-                    }
-                }
-            }
+            command = "open garage"
         }
+        // Add more conditions as needed.
         
-        if commandSent {
+        if let command = command {
             DispatchQueue.main.async {
                 self.commandRecognized = true
             }
+            NotificationCenter.default.post(name: .voiceCommandReceived,
+                                            object: nil,
+                                            userInfo: ["command": command, "fullText": text])
+            
+            // Reset feedback and clear recognizedText after a short delay.
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
                 self.commandRecognized = false
                 self.feedbackMessage = ""
-                self.stopListening()
+                self.recognizedText = ""  // Clear the preview area
             }
         }
     }

@@ -30,9 +30,22 @@
 		DB812C512D80C07C00F1CDD6 /* HomeGuard.xctestplan */ = {isa = PBXFileReference; lastKnownFileType = text; path = HomeGuard.xctestplan; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		DB65A6FF2D9B367E002CD7A5 /* Exceptions for "HomeGuard" folder in "HomeGuard" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = DB33DB932D6839B7006EA971 /* HomeGuard */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		DB33DB962D6839B7006EA971 /* HomeGuard */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				DB65A6FF2D9B367E002CD7A5 /* Exceptions for "HomeGuard" folder in "HomeGuard" target */,
+			);
 			path = HomeGuard;
 			sourceTree = "<group>";
 		};
@@ -401,6 +414,7 @@
 				DEVELOPMENT_TEAM = 5K7WAX2YNP;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = HomeGuard/Info.plist;
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "This app needs access to the microphone for voice recognition";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "This app uses speech recognition to process voice commands for controlling smart home devices.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -432,6 +446,7 @@
 				DEVELOPMENT_TEAM = 5K7WAX2YNP;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = HomeGuard/Info.plist;
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "This app needs access to the microphone for voice recognition";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "This app uses speech recognition to process voice commands for controlling smart home devices.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;

@@ -2,28 +2,26 @@ import SwiftUI
 
 struct DevicesAreaView: View {
     @Binding var devices: [Device]
-    var onAdd: () -> Void
     var onSelect: (Device) -> Void
     var onContextAction: (Device, DeviceContextAction) -> Void
     @ObservedObject var logManager: EventLogManager
-
+    
+    // Grid layout: two columns.
+    let columns = [
+        GridItem(.flexible(), spacing: 16),
+        GridItem(.flexible(), spacing: 16)
+    ]
+    
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            // Header banner for Devices (green outline)
+        VStack(alignment: .leading, spacing: 16) {
+            // Devices Banner
             HStack {
                 Image(systemName: "desktopcomputer")
                     .foregroundColor(.green)
-                    .padding(.trailing, 4)
                 Text("Devices")
                     .font(.headline)
-                Spacer()
-                if devices.isEmpty {
-                    Button(action: onAdd) {
-                        Image(systemName: "plus.circle")
-                            .font(.title2)
-                    }
                     .foregroundColor(.green)
-                }
+                Spacer()
             }
             .padding()
             .frame(maxWidth: .infinity)
@@ -31,50 +29,58 @@ struct DevicesAreaView: View {
                 RoundedRectangle(cornerRadius: 8)
                     .stroke(Color.green, lineWidth: 2)
             )
-            .padding(.horizontal)
-            .fixedSize(horizontal: false, vertical: true)
+            // No extra horizontal padding here so it matches Automations.
             
             if devices.isEmpty {
-                Text("No devices. Tap '+' to add one.")
-                    .font(.caption)
+                Text("No devices available.")
                     .foregroundColor(.gray)
                     .padding(.horizontal)
             } else {
-                ForEach($devices) { bindingDevice in
-                    Button(action: { onSelect(bindingDevice.wrappedValue) }) {
-                        DeviceRowView(
-                            device: bindingDevice,
-                            logManager: logManager,
-                            onEdit: { onContextAction(bindingDevice.wrappedValue, .edit) },
-                            onDelete: { onContextAction(bindingDevice.wrappedValue, .delete) }
-                        )
-                    }
-                    .buttonStyle(PlainButtonStyle())
-                    .contextMenu {
-                        Button(action: { onContextAction(bindingDevice.wrappedValue, .edit) }) {
-                            Label("Edit", systemImage: "pencil")
-                        }
-                        Button(action: { onContextAction(bindingDevice.wrappedValue, .delete) }) {
-                            Label("Delete", systemImage: "trash")
+                ScrollView {
+                    LazyVGrid(columns: columns, spacing: 16) {
+                        ForEach(sortedDeviceTypes, id: \.self) { deviceType in
+                            ForEach(groupedDeviceTypes[deviceType] ?? []) { device in
+                                if let bindingDevice = binding(for: device) {
+                                    DeviceCardView(
+                                        device: bindingDevice,
+                                        devices: $devices,
+                                        logManager: logManager,
+                                        onSelect: { onSelect(bindingDevice.wrappedValue) },
+                                        onEdit: { onContextAction(bindingDevice.wrappedValue, .edit) }
+                                    )
+                                }
+                            }
                         }
                     }
-                    Divider()
-                        .background(Color.green)
-                        .padding(.horizontal)
+                    .padding(.horizontal)
                 }
             }
         }
     }
+    
+    // Group devices by type.
+    private var groupedDeviceTypes: [DeviceType: [Device]] {
+        Dictionary(grouping: devices) { $0.deviceType }
+    }
+    
+    // Sorted keys.
+    private var sortedDeviceTypes: [DeviceType] {
+        groupedDeviceTypes.keys.sorted { $0.rawValue < $1.rawValue }
+    }
+    
+    // Helper: return binding for a given device.
+    private func binding(for device: Device) -> Binding<Device>? {
+        guard let index = devices.firstIndex(where: { $0.id == device.id }) else { return nil }
+        return $devices[index]
+    }
 }
 
 struct DevicesAreaView_Previews: PreviewProvider {
-    @State static var devices: [Device] = [
-        Device.create(name: "Living Room Lights", status: "Off", deviceType: .light, port: availablePorts[.light]?.first ?? "")
-    ]
+    @State static var devices: [Device] = Device.defaultDevices()
+    
     static var previews: some View {
         DevicesAreaView(
             devices: $devices,
-            onAdd: {},
             onSelect: { _ in },
             onContextAction: { _, _ in },
             logManager: EventLogManager()

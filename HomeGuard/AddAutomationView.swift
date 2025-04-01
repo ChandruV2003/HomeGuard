@@ -126,13 +126,24 @@ struct AddAutomationView: View {
             id: UUID(),
             name: ruleName,
             condition: condition,
-            action: "Execute",
+            action: "Execute", // if needed, or adjust accordingly
             activeDays: activeDayString,
             triggerEnabled: useTriggerTime,
             triggerTime: triggerTime
         )
-        onSave(newRule)
-        dismiss()
+        
+        NetworkManager.sendAutomationRule(rule: newRule) { success in
+            if success {
+                // Optionally update your local automationRules array by fetching from the ESP32
+                NetworkManager.fetchAutomationRules { fetchedRules in
+                    DispatchQueue.main.async {
+                        // Update your local state (e.g., via a binding or state object)
+                    }
+                }
+            }
+            // Dismiss the view whether or not the update was successful (you can also add error handling)
+            dismiss()
+        }
     }
 }
 
