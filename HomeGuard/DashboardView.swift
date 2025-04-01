@@ -42,6 +42,10 @@ struct DashboardView: View {
     // Polling timer for sensor data (2 seconds)
     @State private var sensorTimer = Timer.publish(every: 2, on: .main, in: .common).autoconnect()
     
+    @State private var aiGeneratedAutomation: AutomationRule? = nil
+    // For AI automation
+    @State private var showAIProcessing = false
+    
     var body: some View {
         NavigationView {
             contentView
@@ -173,6 +177,18 @@ struct DashboardView: View {
             .padding(.vertical)
         }
     }
+    private func fetchAIAutomations() {
+            guard let logs = logManager.logs.last else { return }
+        ChatGPTAPI.fetchAutomation(prompt: logs) { suggestedAutomation in
+                DispatchQueue.main.async {
+                    if let automation = suggestedAutomation {
+                        automationRules.append(automation)
+                        logManager.addLog("AI suggested automation: \(automation.name)")
+                    }
+                    showAIProcessing = false
+                }
+            }
+        }
     
     // MARK: - Updating Device Statuses from sensor JSON
     private func updateDeviceStatuses(with sensorDict: [String: Any]) {
