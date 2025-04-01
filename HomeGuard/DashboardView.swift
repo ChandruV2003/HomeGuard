@@ -146,6 +146,17 @@ struct DashboardView: View {
                 AutomationsAreaView(
                     automationRules: automationRules.filter { $0.name != "Security System" },
                     onAdd: { showAddAutomation = true },
+                    onAcceptAISuggestion: {
+                            if let aiAutomation = aiGeneratedAutomation {
+                                automationRules.append(aiAutomation) // ✅ Accept AI automation
+                                aiGeneratedAutomation = nil
+                                logManager.addLog("Accepted AI automation: \(aiAutomation.name)")
+                            }
+                        },
+                    onDismissAISuggestion: {
+                            aiGeneratedAutomation = nil // ✅ Dismiss AI automation
+                            logManager.addLog("Dismissed AI automation")
+                        },
                     onContextAction: { rule, action in
                         handleAutomationAction(rule: rule, action: action)
                     },

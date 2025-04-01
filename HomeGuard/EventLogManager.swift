@@ -29,12 +29,13 @@ class EventLogManager: ObservableObject {
         }
         """
 
-        ChatGPTAPI.fetchAutomation(prompt: prompt) { automation in
+        ChatGPTAPI.fetchAutomation(prompt: prompt) { suggestedAutomation in  // FIXED ARGUMENT LABEL
             DispatchQueue.main.async {
-                if let automation = automation {
-                    self.suggestedAutomation = automation  // Now it updates correctly
+                if let automation = suggestedAutomation {  // FIXED VARIABLE NAME
+                    self.suggestedAutomation = automation
                 }
             }
         }
     }
+
 }
