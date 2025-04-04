@@ -119,6 +119,6 @@ struct CameraLivestreamView: View {
 struct CameraLivestreamView_Previews: PreviewProvider {
     static var previews: some View {
         // Change to your actual ESP32-CAM IP and port
-        CameraLivestreamView(streamURL: URL(string: "http://192.168.4.2:81/stream")!)
+        CameraLivestreamView(streamURL: URL(string: "http://192.168.4.4:81/stream")!)
     }
 }

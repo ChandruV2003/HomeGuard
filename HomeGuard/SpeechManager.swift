@@ -8,10 +8,11 @@ class SpeechManager: ObservableObject {
     @Published var feedbackMessage: String = ""
     @Published var isListening: Bool = false
     
-    // Dynamic lists (updated by DashboardView via onChange)
+    // Updated lists – DashboardView sets these so we know the available devices/automations.
     @Published var currentDevices: [Device] = []
     @Published var currentAutomations: [AutomationRule] = []
     
+    // Define keywords that can be expanded later.
     let magicKeywords = ["open", "close", "turn on", "turn off", "change"]
     
     private var audioEngine = AVAudioEngine()
@@ -60,20 +61,14 @@ class SpeechManager: ObservableObject {
                 if result.isFinal {
                     print("Final transcription: \(self.recognizedText)")
                     self.processCommand(self.recognizedText)
-                    // Use a longer delay (e.g., 1.0 second) to allow final processing.
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                        if self.audioEngine.isRunning {
-                            self.stopListening()
-                        }
-                    }
+                    // Stop listening immediately once the final transcription is available.
+                    self.stopListening()
                 }
             }
             if let error = error {
                 let nsError = error as NSError
                 if nsError.domain == "com.apple.SFSpeechRecognitionErrorDomain" && nsError.code == 216 {
                     print("Recognition request was canceled.")
-                } else if nsError.localizedDescription.contains("No speech detected") && !self.recognizedText.isEmpty {
-                    // Valid final transcription exists, so ignore this error.
                 } else {
                     print("Recognition error: \(error.localizedDescription)")
                 }
@@ -87,39 +82,58 @@ class SpeechManager: ObservableObject {
         recognitionTask?.cancel()
         recognitionTask = nil
         request = nil
-        recognizedText = "" // Clear the preview text here if desired.
         isListening = false
     }
     
-    /// Evaluates the final recognized text and posts a notification if a command is found.
+    /// Updated processCommand: now it iterates over currentDevices.
+    /// If the recognized text contains a device's (lowercased) name along with “turn on” or “turn off”
+    /// then it sends the corresponding command.
     func processCommand(_ text: String) {
         let lowerText = text.lowercased()
-        var command: String? = nil
+        var commandProcessed = false
         
-        // Example matching: Use flexible matching with keywords.
-        if lowerText.contains("turn on") && lowerText.contains("light") {
-            command = "turn on light"
-        } else if lowerText.contains("turn off") && lowerText.contains("light") {
-            command = "turn off light"
-        } else if lowerText.contains("open") && lowerText.contains("garage") {
-            command = "open garage"
+        // Loop over each output device in currentDevices
+        for device in currentDevices {
+            let deviceName = device.name.lowercased()
+            if lowerText.contains(deviceName) {
+                if lowerText.contains("turn on") {
+                    // Send command to turn device on
+                    NetworkManager.sendCommand(port: device.port, action: "on") { state in
+                        DispatchQueue.main.async {
+                            // You may update state here or rely on a subsequent sync.
+                        }
+                    }
+                    logManager.addLog("\(device.name) turned on via voice")
+                    commandProcessed = true
+                } else if lowerText.contains("turn off") {
+                    NetworkManager.sendCommand(port: device.port, action: "off") { state in
+                        DispatchQueue.main.async {
+                            // Update state as needed.
+                        }
+                    }
+                    logManager.addLog("\(device.name) turned off via voice")
+                    commandProcessed = true
+                }
+            }
         }
-        // Add more conditions as needed.
         
-        if let command = command {
+        if commandProcessed {
             DispatchQueue.main.async {
                 self.commandRecognized = true
             }
-            NotificationCenter.default.post(name: .voiceCommandReceived,
-                                            object: nil,
-                                            userInfo: ["command": command, "fullText": text])
-            
-            // Reset feedback and clear recognizedText after a short delay.
+            // Clear after a brief delay
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
                 self.commandRecognized = false
                 self.feedbackMessage = ""
-                self.recognizedText = ""  // Clear the preview area
+                self.recognizedText = ""
             }
         }
+    }
+    
+    // For logging from processCommand (requires access to logManager)
+    private var logManager: EventLogManager {
+        // In a real app you might inject this via dependency injection.
+        // For now, assume a shared instance or create one if needed.
+        return EventLogManager()
     }
 }

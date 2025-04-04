@@ -41,16 +41,10 @@ struct AutomationRowView: View {
                 }
             }
             Spacer()
-            Button(action: {
+            // Use the updated automation power button (minimal style)
+            AutomationPowerButton(isActive: $isActive) {
                 isActive.toggle()
                 onToggle(isActive)
-            }) {
-                Image(systemName: "power")
-                    .font(.title2)
-                    .padding(10)
-                    .background(isActive ? Color.green : Color.gray)
-                    .clipShape(Circle())
-                    .foregroundColor(.white)
             }
         }
         .padding(.horizontal)
@@ -63,6 +57,22 @@ struct AutomationRowView: View {
                     .foregroundColor(.red)
             }
         }
+    }
+}
+
+struct AutomationPowerButton: View {
+    @Binding var isActive: Bool
+    var onToggle: () -> Void
+
+    var body: some View {
+        Button(action: {
+            onToggle()
+        }) {
+            Image(systemName: "power")
+                .font(.title2)
+                .foregroundColor(isActive ? .green : .gray)
+        }
+        .buttonStyle(PlainButtonStyle())
     }
 }
 

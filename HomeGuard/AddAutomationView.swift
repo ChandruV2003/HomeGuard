@@ -132,6 +132,8 @@ struct AddAutomationView: View {
             triggerTime: triggerTime
         )
         
+        onSave(newRule)
+        
         NetworkManager.sendAutomationRule(rule: newRule) { success in
             if success {
                 // Optionally update your local automationRules array by fetching from the ESP32

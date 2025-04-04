@@ -7,11 +7,12 @@
 	<key>NSExceptionDomains</key>
 	<dict>
 		<key>192.168.4.2</key>
-		<dict/>
-		<key>NSIncludesSubdomains</key>
-		<true/>
-		<key>NSTemporaryExceptionAllowsInsecure-HTTPLoads</key>
-		<true/>
+		<dict>
+			<key>NSTemporaryExceptionAllowsInsecure-HTTPLoads</key>
+			<true/>
+			<key>NSIncludesSubdomains</key>
+			<true/>
+		</dict>
 	</dict>
 </dict>
 </plist>
