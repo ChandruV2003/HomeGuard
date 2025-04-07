@@ -4,6 +4,7 @@ struct DashboardView: View {
     @State private var devices: [Device] = []
     @State private var automationRules: [AutomationRule] = []
     
+    // Created as a StateObject so it's not private
     @StateObject var speechManager = SpeechManager()
     @StateObject var logManager = EventLogManager()
     
@@ -47,13 +48,21 @@ struct DashboardView: View {
     @State private var showAIProcessing = false
     
     var body: some View {
-        NavigationView {
-            contentView
+        // 1) Build the main content in a helper
+        let mainContent = contentView
+        
+        // 2) Put it in a NavigationView and add your .toolbar, .onAppear, .onReceive, etc.
+        let navigationContainer = NavigationView {
+            mainContent
                 .toolbar { toolbarContent }
                 .onAppear {
+                    // Link speechManager's logManager:
+                    speechManager.logManager = logManager
+                    
                     if devices.isEmpty {
                         devices = Device.defaultDevices()
                     }
+                    // Insert securityAutomation if not already present
                     if !automationRules.contains(where: { $0.name == "Security System" }) {
                         automationRules.insert(securityAutomation, at: 0)
                     }
@@ -77,68 +86,92 @@ struct DashboardView: View {
                         }
                     }
                 }
-                .sheet(isPresented: $showAddAutomation) {
-                    AddAutomationView(inputDevices: filteredSensors) { newRule in
-                        // Optionally, you may send newRule to firmware before appending.
-                        automationRules.append(newRule)
-                        logManager.addLog("Added automation: \(newRule.name)")
-                        showAddAutomation = false
-                        // Refresh automation rules from firmware
-                        NetworkManager.fetchAutomationRules { fetchedRules in
-                            if let rules = fetchedRules {
-                                DispatchQueue.main.async {
-                                    automationRules = rules
-                                }
-                            }
-                        }
-                    }
-                }
-                .sheet(item: $deviceForEdit) { device in
-                    EditDeviceView(device: device) { updatedDevice in
-                        if let index = devices.firstIndex(where: { $0.id == updatedDevice.id }) {
-                            devices[index] = updatedDevice
-                            logManager.addLog("Updated device: \(updatedDevice.name)")
-                        }
-                        deviceForEdit = nil
-                    }
-                }
-                .sheet(item: $showEditAutomation) { rule in
-                    if rule.name == "Security System" {
-                        SecuritySettingsView(rule: $securityAutomation)
-                    } else {
-                        EditAutomationView(rule: rule, inputDevices: filteredSensors) { updatedRule in
-                            if let index = automationRules.firstIndex(where: { $0.id == updatedRule.id }) {
-                                automationRules[index] = updatedRule
-                                logManager.addLog("Updated automation: \(updatedRule.name)")
-                            }
-                            showEditAutomation = nil
-                        }
-                    }
-                }
-                .sheet(isPresented: $showLog) {
-                    EventLogView(logManager: logManager)
-                }
-                .sheet(isPresented: $showLCDSettings) {
-                    LCDSettingsView()
-                }
-                .sheet(isPresented: $showCameraLivestream) {
-                    CameraLivestreamView(streamURL: URL(string: "http://\(Config.globalESPIP):81/stream")!)
-                }
-                // Security Settings sheet
-                .sheet(isPresented: $showSecuritySettings) {
-                    SecuritySettingsView(rule: $securityAutomation)
-                }
         }
         .navigationViewStyle(StackNavigationViewStyle())
-        .onChange(of: devices) { newDevices, _ in
-            speechManager.currentDevices = newDevices
-        }
-        .onChange(of: automationRules) { newRules, _ in
-            speechManager.currentAutomations = newRules
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .voiceCommandReceived)) { notification in
-            processVoiceCommand(notification: notification)
-        }
+        
+        // 3) Now attach the .sheet, .onChange, etc. to that container in smaller pieces:
+
+        let withSheets = navigationContainer
+            // Sheet for "Add Automation"
+            .sheet(isPresented: $showAddAutomation) {
+                AddAutomationView(
+                    inputDevices: filteredSensors,
+                    outputDevices: filteredOutputs
+                ) { newRule in
+                    automationRules.append(newRule)
+                    logManager.addLog("Added automation: \(newRule.name)")
+                    showAddAutomation = false
+                    // Refresh from firmware
+                    NetworkManager.fetchAutomationRules { fetchedRules in
+                        if let rules = fetchedRules {
+                            DispatchQueue.main.async {
+                                automationRules = rules
+                            }
+                        }
+                    }
+                }
+            }
+            // Sheet for editing devices
+            .sheet(item: $deviceForEdit) { device in
+                EditDeviceView(device: device) { updatedDevice in
+                    if let index = devices.firstIndex(where: { $0.id == updatedDevice.id }) {
+                        devices[index] = updatedDevice
+                        logManager.addLog("Updated device: \(updatedDevice.name)")
+                    }
+                    deviceForEdit = nil
+                }
+            }
+            // Sheet for editing automations
+            .sheet(item: $showEditAutomation) { rule in
+                if rule.name == "Security System" {
+                    // Security automation => open SecuritySettingsView
+                    SecuritySettingsView(rule: $securityAutomation)
+                } else {
+                    EditAutomationView(
+                        rule: rule,
+                        inputDevices: filteredSensors,
+                        outputDevices: filteredOutputs
+                    ) { updatedRule in
+                        if let index = automationRules.firstIndex(where: { $0.id == updatedRule.id }) {
+                            automationRules[index] = updatedRule
+                            logManager.addLog("Updated automation: \(updatedRule.name)")
+                        }
+                        showEditAutomation = nil
+                    }
+                }
+            }
+            // Sheet for event log
+            .sheet(isPresented: $showLog) {
+                EventLogView(logManager: logManager)
+            }
+            // Sheet for LCD
+            .sheet(isPresented: $showLCDSettings) {
+                LCDSettingsView()
+            }
+            // Sheet for Camera
+            .sheet(isPresented: $showCameraLivestream) {
+                CameraLivestreamView(streamURL: URL(string: "http://\(Config.globalESPIP):81/stream")!)
+            }
+            // Separate sheet for security system
+            .sheet(isPresented: $showSecuritySettings) {
+                SecuritySettingsView(rule: $securityAutomation)
+            }
+        
+        // 4) Attach the .onChange calls
+        let withOnChange = withSheets
+            .onChange(of: devices) {
+                // iOS 17 no-parameter closure
+                speechManager.currentDevices = devices
+            }
+            .onChange(of: automationRules) {
+                speechManager.currentAutomations = automationRules
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .voiceCommandReceived)) { notification in
+                processVoiceCommand(notification: notification)
+            }
+        
+        // 5) Return final result
+        return withOnChange
     }
     
     private var contentView: some View {
@@ -147,10 +180,14 @@ struct DashboardView: View {
                 HeaderView(title: "HomeGuard Dashboard")
                 WiFiStatusView(isConnected: isConnected)
                     .padding(.horizontal)
+                
+                // Security banner
                 SecuritySystemBannerView(rule: securityAutomation) {
                     showSecuritySettings = true
                 }
                 .padding(.horizontal)
+                
+                // Automations
                 AutomationsAreaView(
                     automationRules: automationRules.filter { $0.name != "Security System" },
                     aiGeneratedAutomation: aiGeneratedAutomation,
@@ -178,6 +215,8 @@ struct DashboardView: View {
                     },
                     addEnabled: !devices.isEmpty
                 )
+                
+                // Devices
                 DevicesAreaView(
                     devices: $devices,
                     onSelect: { device in
@@ -195,9 +234,52 @@ struct DashboardView: View {
                     logManager: logManager
                 )
                 .padding(.horizontal)
+                
+                // Voice control
                 VoiceControlButton(speechManager: speechManager)
             }
             .padding(.vertical)
+        }
+    }
+    
+    private var toolbarContent: some ToolbarContent {
+        Group {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button(action: {
+                    showError("Dashboard rearrangement coming soon!")
+                }) {
+                    Image(systemName: "gearshape.fill")
+                        .font(.title)
+                }
+            }
+            ToolbarItem(placement: .navigationBarLeading) {
+                Button(action: { showLog = true }) {
+                    Image(systemName: "clock.arrow.circlepath")
+                        .font(.title2)
+                }
+            }
+        }
+    }
+    
+    // Only includes sensor devices
+    private var filteredSensors: [Device] {
+        devices.filter { device in
+            device.deviceType == .sensor ||
+            device.deviceType == .temperature ||
+            device.deviceType == .humidity ||
+            device.deviceType == .motion
+        }
+    }
+    
+    // Adds 'fan', 'light', 'servo', 'buzzer', 'statusLED', 'door' as output devices
+    private var filteredOutputs: [Device] {
+        devices.filter { device in
+            device.deviceType == .fan ||
+            device.deviceType == .light ||
+            device.deviceType == .servo ||
+            device.deviceType == .buzzer ||
+            device.deviceType == .statusLED ||
+            device.deviceType == .door
         }
     }
     
@@ -206,7 +288,7 @@ struct DashboardView: View {
               let command = userInfo["command"] as? String,
               let fullText = userInfo["fullText"] as? String else { return }
         print("Voice command received: \(command) from: \(fullText)")
-        // Improved basic matching: loop through currentDevices and check if device name appears.
+        
         let lowerText = fullText.lowercased()
         for device in devices {
             let deviceName = device.name.lowercased()
@@ -324,32 +406,36 @@ struct DashboardView: View {
                 break
             }
         }
-    }
-    
-    private var filteredSensors: [Device] {
-        devices.filter { device in
-            device.deviceType == .sensor ||
-            device.deviceType == .temperature ||
-            device.deviceType == .humidity ||
-            device.deviceType == .motion
-        }
-    }
-    
-    private var toolbarContent: some ToolbarContent {
-        Group {
-            ToolbarItem(placement: .navigationBarTrailing) {
-                Button(action: {
-                    showError("Dashboard rearrangement coming soon!")
-                }) {
-                    Image(systemName: "gearshape.fill")
-                        .font(.title)
-                }
+        // e.g. after your switch statement, still inside updateDeviceStatuses
+        if let strip1 = sensorDict["strip1Color"] as? String {
+            if let idx = devices.firstIndex(where: { $0.port == "GPIO32" }) {
+                devices[idx].isOn = (strip1 != "000000")
+                devices[idx].status = devices[idx].isOn ? "On" : "Off"
             }
-            ToolbarItem(placement: .navigationBarLeading) {
-                Button(action: { showLog = true }) {
-                    Image(systemName: "clock.arrow.circlepath")
-                        .font(.title2)
-                }
+        }
+        if let strip2 = sensorDict["strip2Color"] as? String {
+            if let idx = devices.firstIndex(where: { $0.port == "GPIO33" }) {
+                devices[idx].isOn = (strip2 != "000000")
+                devices[idx].status = devices[idx].isOn ? "On" : "Off"
+            }
+        }
+        if let fanVal = sensorDict["fanOn"] as? Bool {
+            if let idx = devices.firstIndex(where: { $0.port == "GPIO26" }) {
+                devices[idx].isOn = fanVal
+                devices[idx].status = fanVal ? "On" : "Off"
+            }
+        }
+        if let buzzerVal = sensorDict["buzzerOn"] as? Bool {
+            if let idx = devices.firstIndex(where: { $0.port == "GPIO17" }) {
+                devices[idx].isOn = buzzerVal
+                devices[idx].status = buzzerVal ? "On" : "Off"
+            }
+        }
+
+        if let ledVal = sensorDict["statusLedOn"] as? Bool {
+            if let idx = devices.firstIndex(where: { $0.port == "GPIO2" }) {
+                devices[idx].isOn = ledVal
+                devices[idx].status = ledVal ? "On" : "Off"
             }
         }
     }

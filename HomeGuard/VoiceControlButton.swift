@@ -3,26 +3,46 @@ import SwiftUI
 struct VoiceControlButton: View {
     @ObservedObject var speechManager: SpeechManager
     @State private var isPressed: Bool = false
-
+    
+    // Decide the size of the transcript area so the mic button never moves.
+    private let transcriptWidth: CGFloat = 250
+    private let transcriptHeight: CGFloat = 60
+    
     var body: some View {
-        VStack(spacing: 8) {
-            // Recognized text box appears only while the mic is pressed.
-            if isPressed {
-                Text(speechManager.recognizedText)
-                    .padding()
-                    .frame(maxWidth: .infinity)
-                    .background(Color(.systemGray6))
-                    .cornerRadius(8)
-                    .transition(.opacity)
+        VStack(spacing: 16) {
+            
+            // We place the transcript box in a known, fixed size, so the mic button doesn’t shift.
+            ZStack(alignment: .center) {
+                // A background rectangle
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color(.systemGray6))
+                    .frame(width: transcriptWidth, height: transcriptHeight)
+                    .opacity(isPressed ? 1.0 : 0.0) // only show the background if pressed
+                
+                // If pressed, show recognized text (attributed)
+                // If not pressed, we can show nothing or a placeholder
+                if isPressed {
+                    ScrollView(.vertical, showsIndicators: true) {
+                        // Display your colored text from speechManager
+                        Text(speechManager.recognizedAttributed)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 4)
+                    }
+                    .frame(width: transcriptWidth - 16, height: transcriptHeight - 16)
+                }
             }
+            // Because we always have a fixed-size ZStack, the mic button below never shifts.
+            
+            // The mic button
             Button(action: {}) {
                 Image(systemName: "mic.fill")
                     .font(.largeTitle)
                     .padding()
-                    .background(isPressed ? Color.blue : Color.red)
+                    .background(buttonColor)
                     .clipShape(Circle())
                     .foregroundColor(.white)
             }
+            // The long-press logic
             .onLongPressGesture(minimumDuration: 0.1, pressing: { pressing in
                 if pressing {
                     if !isPressed {
@@ -33,7 +53,7 @@ struct VoiceControlButton: View {
                 } else {
                     isPressed = false
                     print("Mic button released – waiting for final transcription")
-                    // Increase the delay to allow final results to arrive.
+                    // Add a short delay
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
                         print("Mic button delayed release – stopping listening")
                         speechManager.stopListening()
@@ -43,7 +63,22 @@ struct VoiceControlButton: View {
                 }
             }, perform: {})
         }
-        .padding()
+        .padding(.horizontal)
+        .padding(.vertical, 8)
+    }
+    
+    /// Decide the background color for the mic button:
+    /// - Green if a command was recognized
+    /// - Blue if currently pressed
+    /// - Red otherwise
+    private var buttonColor: Color {
+        if speechManager.commandRecognized {
+            return .green
+        } else if isPressed {
+            return .blue
+        } else {
+            return .red
+        }
     }
 }
 

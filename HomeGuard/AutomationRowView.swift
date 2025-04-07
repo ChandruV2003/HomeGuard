@@ -2,37 +2,40 @@ import SwiftUI
 
 struct AutomationRowView: View {
     var rule: AutomationRule
-    var onToggle: (Bool) -> Void  // Callback when power button is toggled
-    var onEdit: () -> Void          // Callback for edit action
-    var onDelete: () -> Void        // Callback for delete action
+    var onToggle: (Bool) -> Void  // Callback for enabling/disabling the rule
+    var onEdit: () -> Void        // Callback for editing
+    var onDelete: () -> Void      // Callback for deleting
     @State private var isActive: Bool = true
-
-    // Use abbreviated day labels.
+    
+    // Abbreviated day labels
     private let dayLabels: [String] = ["M", "Tu", "W", "Th", "F", "Sa", "Su"]
-
-    // Parse activeDays from rule.activeDays (e.g., "M,Tu,W,Th,F")
+    
+    // Parse activeDays (e.g., "M,Tu,W,Th,F")
     private var activeDays: [String] {
         rule.activeDays.components(separatedBy: ",").map { $0.trimmingCharacters(in: .whitespaces) }
     }
-
+    
     var body: some View {
         HStack {
             Image(systemName: "bolt.fill")
                 .foregroundColor(.blue)
                 .padding(.trailing, 4)
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 4) {
                 Text(rule.name)
-                    .font(.subheadline)
+                    .font(.headline)
                 Text(rule.condition)
-                    .font(.caption)
+                    .font(.subheadline)
                     .foregroundColor(.gray)
+                Text(rule.action)
+                    .font(.subheadline)
+                    .foregroundColor(.green)
             }
             Spacer()
-            // Day indicators (read-only)
+            // Day indicators
             HStack(spacing: 8) {
                 ForEach(dayLabels, id: \.self) { day in
                     Text(day)
-                        .font(.caption2)
+                        .font(.caption)
                         .padding(.vertical, 4)
                         .padding(.horizontal, 6)
                         .background(activeDays.contains(day) ? Color.blue : Color.gray.opacity(0.2))
@@ -41,7 +44,7 @@ struct AutomationRowView: View {
                 }
             }
             Spacer()
-            // Use the updated automation power button (minimal style)
+            // Use the unified power button style for automation rule toggle
             AutomationPowerButton(isActive: $isActive) {
                 isActive.toggle()
                 onToggle(isActive)
@@ -57,22 +60,6 @@ struct AutomationRowView: View {
                     .foregroundColor(.red)
             }
         }
-    }
-}
-
-struct AutomationPowerButton: View {
-    @Binding var isActive: Bool
-    var onToggle: () -> Void
-
-    var body: some View {
-        Button(action: {
-            onToggle()
-        }) {
-            Image(systemName: "power")
-                .font(.title2)
-                .foregroundColor(isActive ? .green : .gray)
-        }
-        .buttonStyle(PlainButtonStyle())
     }
 }
 

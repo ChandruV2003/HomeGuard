@@ -1,7 +1,7 @@
 import Foundation
 
 struct Config {
-    static let globalESPIP: String = "192.168.4.1"
+    static let globalESPIP: String = "172.20.10.4"
 }
 
 // Updated port mappings...
@@ -69,8 +69,8 @@ extension Device {
             Device.create(name: "Security Status LED", status: "Off", deviceType: .statusLED, port: availablePorts[.statusLED]?.first ?? ""),
             Device.create(name: "PIR Sensor", status: "Idle", deviceType: .motion, port: availablePorts[.motion]?.first ?? ""),
             Device.create(name: "DHT11 Sensor", status: "72°F, 55%", deviceType: .temperature, port: availablePorts[.temperature]?.first ?? ""),
-            Device.create(name: "Garage Door Servo", status: "Closed", deviceType: .servo, port: availablePorts[.servo]?[0] ?? ""),
-            Device.create(name: "Front Door Servo", status: "Closed", deviceType: .servo, port: availablePorts[.servo]?[1] ?? ""),
+            Device.create(name: "Garage Door", status: "Closed", deviceType: .servo, port: availablePorts[.servo]?[0] ?? ""),
+            Device.create(name: "Front Door", status: "Closed", deviceType: .servo, port: availablePorts[.servo]?[1] ?? ""),
             Device.create(name: "RFID Sensor", status: "Active", deviceType: .rfid, port: availablePorts[.rfid]?.first ?? ""),
             Device.create(name: "LCD Screen", status: "Ready", deviceType: .lcd, port: availablePorts[.lcd]?.first ?? ""),
             Device.create(name: "Buzzer", status: "Off", deviceType: .buzzer, port: availablePorts[.buzzer]?.first ?? ""),
@@ -88,6 +88,9 @@ struct AutomationRule: Identifiable, Codable, Equatable {
     var activeDays: String
     var triggerEnabled: Bool
     var triggerTime: Date
+    // New properties for editing:
+    var inputDeviceID: UUID?
+    var outputDeviceID: UUID?
 }
 
 enum AutomationContextAction {

@@ -1,6 +1,7 @@
 import Foundation
 
 struct NetworkManager {
+    
     // 1) Command endpoint
     static func sendCommand(
         port: String,
@@ -63,7 +64,7 @@ struct NetworkManager {
         }.resume()
     }
     
-    // 3) Automations
+    // 3) sendAutomationRule => POST /add_rule
     static func sendAutomationRule(rule: AutomationRule, completion: @escaping (Bool) -> Void) {
         guard let url = URL(string: "http://\(Config.globalESPIP)/add_rule") else {
             completion(false)
@@ -71,13 +72,19 @@ struct NetworkManager {
         }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
+        
+        // Convert the triggerTime to an Int.
+        // (Since in our rule the Date now holds the delay in ms when a time-based rule is used,
+        // and 0 for condition-based rules.)
+        let triggerTimeInt = Int(rule.triggerTime.timeIntervalSince1970)
+        
         let json: [String: Any] = [
             "name": rule.name,
             "condition": rule.condition,
             "action": rule.action,
             "activeDays": rule.activeDays,
             "triggerEnabled": rule.triggerEnabled,
-            "triggerTime": rule.triggerTime.timeIntervalSince1970
+            "triggerTime": triggerTimeInt
         ]
         request.httpBody = try? JSONSerialization.data(withJSONObject: json)
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -92,8 +99,8 @@ struct NetworkManager {
             completion(nil)
             return
         }
-        URLSession.shared.dataTask(with: url) { data, response, error in
-            guard let data = data else {
+        URLSession.shared.dataTask(with: url) { data, _, error in
+            guard let data = data, error == nil else {
                 completion(nil)
                 return
             }
@@ -120,11 +127,24 @@ struct NetworkManager {
         }.resume()
     }
     
-    // 5) Security
-    static func sendSecuritySettings(message: String, duration: Int, completion: @escaping (Bool) -> Void) {
-        guard let encodedMessage = message.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
-              let url = URL(string: "http://\(Config.globalESPIP)/security?msg=\(encodedMessage)&duration=\(duration)")
-        else {
+    // 5) Security: /security?good=...&bad=...&granted=...&denied=...&buzzerMs=...
+    static func sendSecuritySettings(
+        goodCard: String,
+        badCard: String,
+        grantedMsg: String,
+        deniedMsg: String,
+        buzzerMs: Int,
+        completion: @escaping (Bool) -> Void
+    ) {
+        var comp = URLComponents(string: "http://\(Config.globalESPIP)/security")!
+        comp.queryItems = [
+            URLQueryItem(name: "good", value: goodCard),
+            URLQueryItem(name: "bad", value: badCard),
+            URLQueryItem(name: "granted", value: grantedMsg),
+            URLQueryItem(name: "denied", value: deniedMsg),
+            URLQueryItem(name: "buzzerMs", value: String(buzzerMs))
+        ]
+        guard let url = comp.url else {
             completion(false)
             return
         }
