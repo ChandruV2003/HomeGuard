@@ -57,20 +57,14 @@
                 <true/>
             </dict>
 
-            <key>172.20.10.5</key>
+            <key>172.20.10.6</key>
             <dict>
                 <key>NSIncludesSubdomains</key>
                 <true/>
                 <key>NSTemporaryExceptionAllowsInsecureHTTPLoads</key>
                 <true/>
-            </dict>
-
-            <key>172.20.10.60</key>
-            <dict>
-                <key>NSIncludesSubdomains</key>
-                <true/>
-                <key>NSTemporaryExceptionAllowsInsecureHTTPLoads</key>
-                <true/>
+                <key>NSTemporaryExceptionMinimumTLSVersion</key>
+                <string>TLSv1.1</string>
             </dict>
         </dict>
     </dict>

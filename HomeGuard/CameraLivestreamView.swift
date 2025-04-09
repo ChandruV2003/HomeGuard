@@ -1,33 +1,48 @@
 import SwiftUI
 import UIKit
 
-/// ViewModel that handles parsing an MJPEG stream and providing
-/// the current frame as a UIImage.
 class MjpegStreamViewModel: NSObject, ObservableObject, URLSessionDataDelegate {
-    /// The latest frame from the stream.
+    // The latest frame from the stream.
     @Published var image: UIImage?
 
     private var dataTask: URLSessionDataTask?
     private var session: URLSession?
     private var currentData = Data()
-
+    
     // The boundary in your ESP32-CAM stream (set in firmware).
-    // The firmware sends "boundary=frame", so we look for "--frame".
-    private let boundaryString = "--frame"
+    private let boundaryString = "--frame\r\n"
+    
+    // Parser state for the multipart stream.
+    enum MJPEGParseState {
+        case lookingForBoundary
+        case readingHeaders
+        case readingImageData(expectedLength: Int)
+    }
+    private var parserState: MJPEGParseState = .lookingForBoundary
 
-    // Starts streaming from the given URL.
+    // Change this constant to control how much data is allowed before fallback extraction.
+    private let fallbackBufferThreshold = 200_000   // Adjust this value (e.g., 200,000 bytes ~ one second's worth)
+
+    // Use a serial delegate queue to avoid concurrent modifications.
+    private let serialQueue: OperationQueue = {
+        let queue = OperationQueue()
+        queue.maxConcurrentOperationCount = 1
+        return queue
+    }()
+
+    // MARK: - Streaming Methods
+
     func startStreaming(url: URL) {
         let config = URLSessionConfiguration.default
-        // Make sure the session doesn't timeout, since this is a continuous stream.
         config.timeoutIntervalForRequest = .infinity
         config.timeoutIntervalForResource = .infinity
 
-        session = URLSession(configuration: config, delegate: self, delegateQueue: OperationQueue())
+        // Initialize URLSession with the serial delegate queue.
+        session = URLSession(configuration: config, delegate: self, delegateQueue: serialQueue)
         dataTask = session?.dataTask(with: url)
         dataTask?.resume()
     }
 
-    // Stops the streaming session.
     func stopStreaming() {
         dataTask?.cancel()
         session?.invalidateAndCancel()
@@ -36,56 +51,134 @@ class MjpegStreamViewModel: NSObject, ObservableObject, URLSessionDataDelegate {
 
     // MARK: - URLSessionDataDelegate
 
-    // Continuously called as chunks of data arrive from the stream.
     func urlSession(_ session: URLSession,
                     dataTask: URLSessionDataTask,
                     didReceive data: Data) {
-        // Append the newly received data to our buffer.
+        // Append new data – safe because we are on our serial queue.
         currentData.append(data)
-
-        // Look for our boundary string in the current data.
-        while let boundaryRange = currentData.range(of: boundaryData()) {
-            // Extract data up to (but not including) the boundary as one frame chunk.
-            let frameData = currentData[..<boundaryRange.lowerBound]
-
-            // Remove that chunk + boundary from our buffer.
-            currentData.removeSubrange(..<boundaryRange.upperBound)
-
-            // Attempt to find the JPEG and convert it to a UIImage.
-            if let image = extractJPEG(from: frameData) {
-                DispatchQueue.main.async {
-                    // Publish the new frame so the UI can update.
-                    self.image = image
+        print("Received \(data.count) bytes, currentData length: \(currentData.count)")
+        
+        processBuffer()
+    }
+    
+    /// Process the accumulated data using our state machine. If no boundary is found and the data grows too large,
+    /// use a fallback that looks for JPEG start (FF D8) and end (FF D9) markers.
+    private func processBuffer() {
+        while true {
+            switch parserState {
+            case .lookingForBoundary:
+                if let boundaryRange = currentData.range(of: boundaryString.data(using: .utf8)!) {
+                    print("Boundary found at range: \(boundaryRange)")
+                    // Remove everything up to and including the boundary.
+                    currentData.removeSubrange(..<boundaryRange.upperBound)
+                    parserState = .readingHeaders
+                    print("State changed to: readingHeaders")
+                } else {
+                    // If we haven't found a boundary and the buffer is too large, use fallback extraction.
+                    if currentData.count > fallbackBufferThreshold {
+                        print("Buffer too large (\(currentData.count) bytes) without boundary; attempting fallback extraction.")
+                        if let start = currentData.range(of: Data([0xFF, 0xD8])),
+                           let end = currentData.range(of: Data([0xFF, 0xD9]), options: [], in: start.lowerBound..<currentData.endIndex) {
+                            let jpegData = currentData[start.lowerBound..<end.upperBound]
+                            currentData.removeSubrange(0..<end.upperBound)
+                            if let image = UIImage(data: jpegData) {
+                                DispatchQueue.main.async {
+                                    self.image = image
+                                }
+                                print("Image extracted via fallback")
+                            } else {
+                                print("Fallback: failed to create image from data")
+                            }
+                        }
+                    }
+                    // Boundary not found; wait for more data.
+                    return
+                }
+                
+            case .readingHeaders:
+                // Look for the header terminator (\r\n\r\n).
+                if let headerEndRange = currentData.range(of: "\r\n\r\n".data(using: .utf8)!) {
+                    let headerData = currentData.prefix(headerEndRange.lowerBound)
+                    guard let headerString = String(data: headerData, encoding: .utf8) else {
+                        print("Failed to decode header")
+                        currentData.removeSubrange(..<headerEndRange.upperBound)
+                        parserState = .lookingForBoundary
+                        continue
+                    }
+                    print("Header found: \(headerString)")
+                    
+                    // Parse the headers for Content-Length.
+                    let lines = headerString.components(separatedBy: "\r\n")
+                    var contentLength: Int?
+                    for line in lines {
+                        if line.lowercased().hasPrefix("content-length") {
+                            let parts = line.components(separatedBy: ":")
+                            if parts.count > 1, let length = Int(parts[1].trimmingCharacters(in: .whitespaces)) {
+                                contentLength = length
+                                break
+                            }
+                        }
+                    }
+                    
+                    if let contentLength = contentLength {
+                        print("Parsed Content-Length: \(contentLength)")
+                        // Remove the header block.
+                        currentData.removeSubrange(..<headerEndRange.upperBound)
+                        parserState = .readingImageData(expectedLength: contentLength)
+                        print("State changed to: readingImageData(expectedLength: \(contentLength))")
+                    } else {
+                        print("Content-Length not found in header: \(headerString)")
+                        currentData.removeSubrange(..<headerEndRange.upperBound)
+                        parserState = .lookingForBoundary
+                    }
+                } else {
+                    // Incomplete header; wait for more data.
+                    return
+                }
+                
+            case .readingImageData(let expectedLength):
+                if currentData.count >= expectedLength {
+                    let imageData = currentData.prefix(expectedLength)
+                    currentData.removeSubrange(0..<expectedLength)
+                    
+                    // Optionally remove trailing CRLF if present.
+                    if currentData.starts(with: "\r\n".data(using: .utf8)!) {
+                        currentData.removeSubrange(0..<2)
+                    }
+                    
+                    print("Attempting to create image from \(expectedLength) bytes")
+                    if let image = UIImage(data: imageData) {
+                        DispatchQueue.main.async {
+                            self.image = image
+                        }
+                        print("Image created successfully")
+                    } else {
+                        print("Failed to create image from data")
+                        let hexString = imageData.prefix(10).map { String(format:"%02hhx", $0) }.joined(separator: " ")
+                        print("Image data first bytes: \(hexString)")
+                    }
+                    
+                    // Reset state for the next frame.
+                    parserState = .lookingForBoundary
+                    print("State reset to: lookingForBoundary")
+                } else {
+                    // Not enough data yet; wait for more.
+                    return
                 }
             }
         }
     }
-
-    // Convert the boundary string to Data for searching.
-    private func boundaryData() -> Data {
-        boundaryString.data(using: .utf8) ?? Data()
-    }
-
-    // Tries to find a complete JPEG (FF D8 ... FF D9) inside a chunk.
-    private func extractJPEG(from data: Data) -> UIImage? {
-        // The start of a JPEG is 0xFF 0xD8, the end is 0xFF 0xD9.
-        guard
-            let startRange = data.range(of: Data([0xFF, 0xD8])),
-            let endRange   = data.range(of: Data([0xFF, 0xD9]),
-                                options: [],
-                                in: startRange.lowerBound..<data.endIndex)
-        else {
-            return nil
+    
+    // Called when the streaming task completes.
+    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        if let error = error {
+            print("Stream completed with error: \(error.localizedDescription)")
+        } else {
+            print("Stream completed successfully")
         }
-
-        // Extract the JPEG data from start to end (inclusive).
-        let jpegData = data[startRange.lowerBound..<endRange.upperBound]
-        return UIImage(data: jpegData)
     }
 }
 
-/// SwiftUI view that displays an MJPEG stream from an ESP32-CAM.
-/// It starts parsing the stream when the view appears, and stops when it disappears.
 struct CameraLivestreamView: View {
     let streamURL: URL
 
@@ -102,23 +195,17 @@ struct CameraLivestreamView: View {
                     .clipped()
             } else {
                 Text("Loading Stream...")
-                    .frame(width: geometry.size.width, height: geometry.size.height)
+                    .frame(width: geometry.size.width,
+                           height: geometry.size.height)
             }
         }
-        // Start streaming when the view appears.
-        .onAppear {
-            viewModel.startStreaming(url: streamURL)
-        }
-        // Stop streaming when the view disappears (e.g. navigates away).
-        .onDisappear {
-            viewModel.stopStreaming()
-        }
+        .onAppear { viewModel.startStreaming(url: streamURL) }
+        .onDisappear { viewModel.stopStreaming() }
     }
 }
 
 struct CameraLivestreamView_Previews: PreviewProvider {
     static var previews: some View {
-        // Change to your actual ESP32-CAM IP and port
-        CameraLivestreamView(streamURL: URL(string: "http://192.168.4.4:81/stream")!)
+        CameraLivestreamView(streamURL: URL(string: "http://172.20.10.6:81/stream")!)
     }
 }

@@ -89,7 +89,7 @@ struct SecuritySettingsView_Previews: PreviewProvider {
         id: UUID().uuidString,  // Use string-based ID
         name: "Security Automation",
         condition: "RFID Allowed",
-        action: "Display: Welcome; Buzzer: Off",
+        action: "Active",
         activeDays: "M,Tu,W,Th,F,Sa,Su",
         triggerEnabled: true,
         triggerTime: Date(),

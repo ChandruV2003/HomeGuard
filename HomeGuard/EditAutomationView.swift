@@ -3,10 +3,9 @@ import SwiftUI
 struct EditAutomationView: View {
     @Environment(\.dismiss) var dismiss
     @State var rule: AutomationRule
-    var inputDevices: [Device]  // Sensors
-    var outputDevices: [Device] // Outputs
+    var inputDevices: [Device]
+    var outputDevices: [Device]
 
-    // Use String? for these IDs, to match AutomationRule.{input,output}DeviceID
     @State private var selectedSensorID: String? = nil
     @State private var comparison: String = "Greater Than"
     @State private var thresholdValue: Double = 70
@@ -24,7 +23,6 @@ struct EditAutomationView: View {
 
     var onSave: (AutomationRule) -> Void
 
-    // Custom initializer that preloads the state from the rule:
     init(rule: AutomationRule,
          inputDevices: [Device],
          outputDevices: [Device],
@@ -35,46 +33,32 @@ struct EditAutomationView: View {
         self.outputDevices = outputDevices
         self.onSave = onSave
 
-        // Set selectedSensorID from rule.inputDeviceID (already a String?).
         if let sensorID = rule.inputDeviceID {
             self._selectedSensorID = State(initialValue: sensorID)
-        } else {
-            self._selectedSensorID = State(initialValue: nil)
         }
-
-        // If the condition string contains something like "Greater Than 70", parse it.
+        // parse condition
         if let sensorID = rule.inputDeviceID,
            let sensor = inputDevices.first(where: { $0.id.uuidString == sensorID }),
            (sensor.deviceType == .temperature || sensor.deviceType == .humidity) {
             let comps = rule.condition.split(separator: " ")
-            // E.g. comps = ["Greater", "Than", "75"]
             if comps.count >= 3 {
-                let firstTwo = comps[0] + " " + comps[1] // "Greater Than" or "Less Than"
+                let firstTwo = comps[0] + " " + comps[1]
                 self._comparison = State(initialValue: String(firstTwo))
                 if let value = Double(comps[2]) {
                     self._thresholdValue = State(initialValue: value)
                 }
             }
         }
-
-        // Set selectedOutputID from rule.outputDeviceID (already a String?).
         if let outputID = rule.outputDeviceID {
             self._selectedOutputID = State(initialValue: outputID)
-        } else {
-            self._selectedOutputID = State(initialValue: nil)
         }
-
-        // Determine output action by the last word in rule.action (e.g. "Kitchen Lights On")
         let actionComponents = rule.action.split(separator: " ")
         if let last = actionComponents.last {
             self._outputAction = State(initialValue: String(last))
         }
-
-        // Set these from the rule
         self._useTriggerTime = State(initialValue: rule.triggerEnabled)
         self._triggerTime = State(initialValue: rule.triggerTime)
-
-        // Parse activeDays from something like "M,Tu,W,Th,F"
+        
         let daysFromRule = rule.activeDays.split(separator: ",").map { String($0) }
         var actives = [Bool](repeating: false, count: 7)
         for (index, dayAbbrev) in dayAbbreviations.enumerated() {
@@ -88,22 +72,19 @@ struct EditAutomationView: View {
     var body: some View {
         NavigationView {
             Form {
-                // Rule name + Input sensor
+                // same sections
                 Section(header: Text("Automation Details")) {
                     TextField("Rule Name", text: $rule.name)
-
                     if !inputDevices.isEmpty {
                         Picker("Input Sensor", selection: $selectedSensorID) {
-                            Text("None").tag(String?.none)  // if user wants no sensor
+                            Text("None").tag(String?.none)
                             ForEach(inputDevices) { device in
-                                // Tag the device's UUID as a string
                                 Text(device.name).tag(Optional(device.id.uuidString))
                             }
                         }
                     }
                 }
 
-                // Condition
                 if let sensorID = selectedSensorID,
                    let sensor = inputDevices.first(where: { $0.id.uuidString == sensorID }) {
                     if sensor.deviceType == .temperature || sensor.deviceType == .humidity {
@@ -123,7 +104,6 @@ struct EditAutomationView: View {
                     }
                 }
 
-                // Output device + on/off
                 Section(header: Text("Output Device & Action")) {
                     if !outputDevices.isEmpty {
                         Picker("Output Device", selection: $selectedOutputID) {
@@ -133,13 +113,11 @@ struct EditAutomationView: View {
                             }
                         }
                     }
-
                     Picker("Action", selection: $outputAction) {
                         ForEach(onOffOptions, id: \.self) { Text($0) }
                     }
                 }
 
-                // Trigger time
                 Section(header: Text("Trigger Time")) {
                     Toggle("Enable Trigger Time", isOn: $useTriggerTime)
                     if useTriggerTime {
@@ -148,7 +126,6 @@ struct EditAutomationView: View {
                     }
                 }
 
-                // Active Days
                 Section(header: Text("Active Days")) {
                     HStack {
                         ForEach(0..<dayAbbreviations.count, id: \.self) { index in
@@ -182,17 +159,14 @@ struct EditAutomationView: View {
 
     // MARK: - Save
     private func saveAutomation() {
-        // Rebuild activeDays string
         let activeDayString = dayAbbreviations.enumerated()
             .filter { activeDays[$0.offset] }
             .map { $0.element }
             .joined(separator: ",")
 
-        // Look up chosen sensor & output
         let sensor = inputDevices.first(where: { $0.id.uuidString == selectedSensorID })
         let outDevice = outputDevices.first(where: { $0.id.uuidString == selectedOutputID })
 
-        // Build condition
         var condition = ""
         if let sensor = sensor {
             switch sensor.deviceType {
@@ -205,26 +179,78 @@ struct EditAutomationView: View {
             }
         }
 
-        // Build final action
         var finalAction = "Execute"
         if let outDevice = outDevice {
             finalAction = "\(outDevice.name) \(outputAction)"
         }
 
-        // Update the rule
+        let isConditionBased: Bool = {
+            if let s = sensor {
+                return s.deviceType == .temperature
+                    || s.deviceType == .humidity
+                    || s.deviceType == .motion
+            }
+            return false
+        }()
+
+        // Rebuild the rule in memory
         rule.condition = condition
         rule.action = finalAction
         rule.activeDays = activeDayString
-        rule.triggerEnabled = useTriggerTime
-        rule.triggerTime = triggerTime
-        // Store the device IDs as strings (matching the firmware model):
+        rule.triggerEnabled = !isConditionBased && useTriggerTime
         rule.inputDeviceID = selectedSensorID
         rule.outputDeviceID = selectedOutputID
 
-        onSave(rule)
-        dismiss()
+        // Temporarily set to 0, then adjust after we fetch the board's time
+        rule.triggerTime = Date(timeIntervalSince1970: 0)
+
+        // If it's condition-based, firmware ignores time
+        if isConditionBased {
+            rule.triggerTime = Date(timeIntervalSince1970: 0)
+        }
+
+        // Fetch the board’s simTime first
+        NetworkManager.fetchSensorData { dict in
+            guard let dict = dict, let boardNow = dict["simTime"] as? Double else {
+                // fallback
+                sendRuleToFirmware(rule)
+                return
+            }
+            if !isConditionBased && self.useTriggerTime {
+                let realDiffSeconds = self.triggerTime.timeIntervalSinceNow
+                let scaledDiff = realDiffSeconds * 1000.0 * Config.timeAcceleration
+                let finalScaled = max(boardNow + scaledDiff, 0)
+                rule.triggerTime = Date(timeIntervalSince1970: finalScaled)
+            } else {
+                rule.triggerTime = Date(timeIntervalSince1970: 0)
+            }
+            sendRuleToFirmware(rule)
+        }
+    }
+
+    private func sendRuleToFirmware(_ updatedRule: AutomationRule) {
+        NetworkManager.sendAutomationRule(rule: updatedRule) { success in
+            DispatchQueue.main.async {
+                if success {
+                    NetworkManager.fetchAutomationRules { fetchedRules in
+                        if let fetched = fetchedRules {
+                            DispatchQueue.main.async {
+                                // Merge them locally if you wish
+                                // Or just replace automation rules
+                                self.onSave(updatedRule)
+                            }
+                        }
+                    }
+                } else {
+                    // Even if not successful, do local onSave
+                    self.onSave(updatedRule)
+                }
+                dismiss()
+            }
+        }
     }
 }
+
 
 // MARK: - Preview
 struct EditAutomationView_Previews: PreviewProvider {

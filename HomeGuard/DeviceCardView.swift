@@ -74,10 +74,6 @@ struct DeviceCardView: View {
         }
         .buttonStyle(PlainButtonStyle())
         
-        // Reordering support
-        .onDrag { NSItemProvider(object: device.id.uuidString as NSString) }
-        .onDrop(of: [UTType.text.identifier],
-                delegate: DeviceDropDelegate(item: device, devices: $devices))
         
         // Context menu for "Edit"
         .contextMenu {
@@ -98,7 +94,7 @@ struct DeviceCardView: View {
             LCDSettingsView()
         }
         .sheet(isPresented: $showCameraView) {
-            CameraLivestreamView(streamURL: URL(string: "http://\(Config.globalESPIP):81/stream")!)
+            CameraLivestreamView(streamURL: URL(string: "http://\(Config.cameraIP):81/stream")!)
         }
         .sheet(isPresented: $showDHTChart) {
             DHT11ChartView()

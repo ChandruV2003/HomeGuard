@@ -72,13 +72,12 @@ struct NetworkManager {
         }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
-        
-        // Convert the triggerTime to an Int.
-        // (Since in our rule the Date now holds the delay in ms when a time-based rule is used,
-        // and 0 for condition-based rules.)
+
+        // Convert the Swift rule's .id to the "uid" field
         let triggerTimeInt = Int(rule.triggerTime.timeIntervalSince1970)
-        
-        let json: [String: Any] = [
+
+        var json: [String: Any] = [
+            "uid": rule.id,  // <--- pass the same UUID string
             "name": rule.name,
             "condition": rule.condition,
             "action": rule.action,
@@ -86,6 +85,14 @@ struct NetworkManager {
             "triggerEnabled": rule.triggerEnabled,
             "triggerTime": triggerTimeInt
         ]
+        // If we have inputDeviceID / outputDeviceID:
+        if let inDev = rule.inputDeviceID {
+            json["inputDeviceID"] = inDev
+        }
+        if let outDev = rule.outputDeviceID {
+            json["outputDeviceID"] = outDev
+        }
+
         request.httpBody = try? JSONSerialization.data(withJSONObject: json)
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         URLSession.shared.dataTask(with: request) { data, response, error in
@@ -93,6 +100,7 @@ struct NetworkManager {
             completion(success)
         }.resume()
     }
+
     
     static func fetchAutomationRules(completion: @escaping ([AutomationRule]?) -> Void) {
         guard let url = URL(string: "http://\(Config.globalESPIP)/get_rules") else {
@@ -119,8 +127,9 @@ struct NetworkManager {
         }.resume()
     }
     
-    static func deleteAutomationRule(ruleName: String, completion: @escaping (Bool) -> Void) {
-        guard let url = URL(string: "http://\(Config.globalESPIP)/delete_rule?name=\(ruleName)") else {
+    static func deleteAutomationRule(uid: String, completion: @escaping (Bool) -> Void) {
+        // Build URL with uid instead of rule name
+        guard let url = URL(string: "http://\(Config.globalESPIP)/delete_rule?uid=\(uid)") else {
             completion(false)
             return
         }
@@ -129,6 +138,22 @@ struct NetworkManager {
             completion(success)
         }.resume()
     }
+
+    
+    static func toggleAutomationRule(uid: String, completion: @escaping (Bool) -> Void) {
+        // E.g. "http://192.168.4.1/toggle_rule?uid=ACEC2339..."
+        let urlString = "http://\(Config.globalESPIP)/toggle_rule?uid=\(uid)"
+        guard let url = URL(string: urlString) else {
+            completion(false)
+            return
+        }
+        URLSession.shared.dataTask(with: url) { _, response, error in
+            let success = (response as? HTTPURLResponse)?.statusCode == 200 && (error == nil)
+            completion(success)
+        }.resume()
+    }
+
+
     
     // 4) LCD
     static func sendLCDMessage(message: String, duration: Int, completion: @escaping (Bool) -> Void) {

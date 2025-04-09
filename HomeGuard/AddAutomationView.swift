@@ -1,18 +1,16 @@
 import SwiftUI
 
 struct AddAutomationView: View {
-    @Binding var automationRules: [AutomationRule] // Add this
-    @EnvironmentObject var logManager: EventLogManager // Add this
-
+    @Binding var automationRules: [AutomationRule]
+    @EnvironmentObject var logManager: EventLogManager
 
     @Environment(\.dismiss) var dismiss
 
-    var inputDevices: [Device]      // e.g. temperature, motion, humidity
-    var outputDevices: [Device]     // e.g. lights, fan, servo, etc.
+    var inputDevices: [Device]
+    var outputDevices: [Device]
 
     @State private var ruleName: String = ""
 
-    // Use only the ID states for selection.
     @State private var selectedSensorID: String? = nil
     @State private var comparison: String = "Greater Than"
     @State private var thresholdValue: Double = 70
@@ -33,13 +31,9 @@ struct AddAutomationView: View {
     var body: some View {
         NavigationView {
             Form {
-                // Rule name + input sensor
                 automationDetailsSection
-                // If sensor is temperature/humidity, show slider
                 conditionSection
-                // Output device + On/Off
                 outputSection
-                // Optional time scheduling
                 triggerTimeSection
                 activeDaysSection
             }
@@ -149,16 +143,18 @@ struct AddAutomationView: View {
     
     // MARK: - Methods
     private func saveAutomation() {
+        // The first half just builds up the new AutomationRule object
+        // with placeholders for triggerTime = 0.  Then, asynchronously,
+        // we fetch the board's current simTime and adjust it.
+
         let activeDayString = dayAbbreviations.enumerated()
             .filter { activeDays[$0.offset] }
             .map { $0.element }
             .joined(separator: ",")
         
-        // Look up the selected sensor and output devices using the IDs:
         let sensor = inputDevices.first(where: { $0.id.uuidString == selectedSensorID })
         let outDevice = outputDevices.first(where: { $0.id.uuidString == selectedOutputID })
         
-        // Build condition string
         var condition = ""
         if let sensor = sensor {
             switch sensor.deviceType {
@@ -171,70 +167,81 @@ struct AddAutomationView: View {
             }
         }
         
-        // Build output action string (e.g. "Kitchen Lights On", "Fan Off", etc.)
         var finalAction = "Execute"
         if let outDevice = outDevice {
             finalAction = "\(outDevice.name) \(outputAction)"
         }
-        
-        // Determine whether this is a condition-based rule
+
+        // We do want to treat time-based vs condition-based differently:
         let isConditionBased: Bool = {
-            if let sensor = sensor {
-                return sensor.deviceType == .temperature ||
-                    sensor.deviceType == .humidity ||
-                    sensor.deviceType == .motion
+            if let s = sensor {
+                return s.deviceType == .temperature
+                    || s.deviceType == .humidity
+                    || s.deviceType == .motion
             }
             return false
         }()
         
-        // For condition-based rules, force triggerTime to 0.
-        let triggerTimeValue: TimeInterval = isConditionBased ? 0 : max(triggerTime.timeIntervalSinceNow * 1000, 0)
-        let newTriggerEnabled: Bool = isConditionBased ? true : useTriggerTime
-        
-        let newRule = AutomationRule(
-            id: UUID().uuidString,         // <--- generate a String
+        // Build the skeleton rule
+        var newRule = AutomationRule(
+            id: UUID().uuidString,
             name: ruleName,
             condition: condition,
             action: finalAction,
             activeDays: activeDayString,
-            triggerEnabled: newTriggerEnabled,
-            triggerTime: Date(timeIntervalSince1970: triggerTimeValue),
-                    // Save them as strings:
+            triggerEnabled: !isConditionBased && useTriggerTime,
+            triggerTime: Date(timeIntervalSince1970: 0),
             inputDeviceID: sensor?.id.uuidString,
             outputDeviceID: outDevice?.id.uuidString
         )
+
+        // If condition-based, the firmware will ignore the time factor; set 0
+        if isConditionBased {
+            newRule.triggerTime = Date(timeIntervalSince1970: 0)
+        }
         
-        // Debug: Log new rule creation before sending
-        print("DEBUG: New rule created: \(newRule)")
-        
-        onSave(newRule)
-        // Remove onSave(newRule) from here if you don't want duplicates.
-        // Instead, use the network call as the single source of truth.
-        NetworkManager.sendAutomationRule(rule: newRule, completion: { success in
+        // Next: asynchronously fetch /sensor to get the board's simTime
+        NetworkManager.fetchSensorData { dict in
+            guard let dict = dict, let boardNow = dict["simTime"] as? Double else {
+                // Could not fetch, fallback => do normal call with triggerTime = 0
+                sendRuleToBoard(rule: newRule)
+                return
+            }
+            // If it IS time-based, we want to convert from real seconds to scaled
+            if !isConditionBased && useTriggerTime {
+                let realDiffSeconds = triggerTime.timeIntervalSinceNow // can be negative if time is in the past
+                // Each real second => 1000 ms => multiplied by TIME_ACCEL_FACTOR
+                let scaledDiff: Double = realDiffSeconds * 1000.0 * Config.timeAcceleration
+                let finalScaled = max(boardNow + scaledDiff, 0)
+                
+                newRule.triggerTime = Date(timeIntervalSince1970: finalScaled)
+            } else {
+                // For condition-based or disabled time
+                newRule.triggerTime = Date(timeIntervalSince1970: 0)
+            }
+            sendRuleToBoard(rule: newRule)
+        }
+    }
+
+    private func sendRuleToBoard(rule: AutomationRule) {
+        NetworkManager.sendAutomationRule(rule: rule) { success in
             DispatchQueue.main.async {
                 if success {
-                    logManager.addLog("Added automation: \(newRule.name)")
-                    // Delay fetch so firmware has time to update its list.
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                        NetworkManager.fetchAutomationRules { fetchedRules in
-                            if let fetched = fetchedRules {
-                                DispatchQueue.main.async {
-                                    self.automationRules = mergeAutomationRules(local: self.automationRules, fetched: fetched)
-                                    print("DEBUG: After merge, automation rules: \(self.automationRules)")
-                                }
-                            } else {
-                                print("DEBUG: Failed to fetch updated rules")
+                    // Now fetch updated rules to refresh the local array
+                    NetworkManager.fetchAutomationRules { fetchedRules in
+                        if let fetched = fetchedRules {
+                            DispatchQueue.main.async {
+                                self.automationRules = mergeAutomationRules(local: self.automationRules, fetched: fetched)
                             }
                         }
                     }
-                } else {
-                    logManager.addLog("Failed to add automation: \(newRule.name)")
                 }
                 dismiss()
             }
-        })
+        }
     }
 }
+
 
 struct AddAutomationView_Previews: PreviewProvider {
     static var previews: some View {

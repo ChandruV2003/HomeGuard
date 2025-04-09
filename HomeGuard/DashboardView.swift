@@ -4,213 +4,209 @@ struct DashboardView: View {
     @State private var devices: [Device] = []
     @State private var automationRules: [AutomationRule] = []
     
-    // Created as a StateObject so it's not private
     @StateObject var speechManager = SpeechManager()
     @StateObject var logManager = EventLogManager()
     
-    // Global connectivity state
     @State private var isConnected: Bool = false
     
-    // For editing modals
     @State private var showEditAutomation: AutomationRule? = nil
     @State private var deviceForEdit: Device? = nil
     @State private var showLog = false
     @State private var errorMessage: String = ""
+    @State private var lastAISuggestionFetch = Date.distantPast
     
-    // For navigating to LCD, Camera, and Security Settings views
     @State private var selectedLCDDevice: Device? = nil
     @State private var selectedCameraDevice: Device? = nil
     @State private var showLCDSettings = false
     @State private var showCameraLivestream = false
+    @State private var isReordering: Bool = false
     
-    // Dedicated binding for Security Settings
     @State private var showSecuritySettings = false
     
-    // For adding automations
     @State private var showAddAutomation = false
     
-    // Default security automation (non-deletable)
     @State private var securityAutomation: AutomationRule = AutomationRule(
         id: UUID().uuidString,
         name: "Security System",
         condition: "RFID Allowed",
-        action: "Display: Welcome; Buzzer: Off",
+        action: "Active",
         activeDays: "M,Tu,W,Th,F,Sa,Su",
         triggerEnabled: true,
         triggerTime: Date()
     )
     
-    // Polling timer for sensor data (2 seconds)
     @State private var sensorTimer = Timer.publish(every: 2, on: .main, in: .common).autoconnect()
     
     @State private var aiGeneratedAutomation: AutomationRule? = nil
-    // For AI automation
     @State private var showAIProcessing = false
+
+    // We'll store the board's simTime from the last fetch
+    @State private var boardSimTime: Double = 0.0
     
     var body: some View {
-        // 1) Build the main content in a helper
         let mainContent = contentView
-        
-        // 2) Put it in a NavigationView and add your .toolbar, .onAppear, .onReceive, etc.
-        let navigationContainer = NavigationView {
-            mainContent
-                .toolbar { toolbarContent }
-                .onAppear {
-                    // Link speechManager's logManager:
-                    speechManager.logManager = logManager
-                    
-                    if devices.isEmpty {
-                        devices = Device.defaultDevices()
-                    }
-                    // Insert securityAutomation if not already present
-                    if !automationRules.contains(where: { $0.name == "Security System" }) {
-                        automationRules.insert(securityAutomation, at: 0)
-                    }
-                    // Check connectivity
-                    syncConnectivity()
-                    // Fetch automation rules from firmware on launch
-                    NetworkManager.fetchAutomationRules { fetchedRules in
-                        if let fetched = fetchedRules {
-                            DispatchQueue.main.async {
-                                // Merge fetched rules with any local ones
-                                self.automationRules = mergeAutomationRules(local: self.automationRules, fetched: fetched)
-                                print("DEBUG: Merged automation rules count: \(self.automationRules.count)")
-                            }
-                        }
-                    }
-                    ChatGPTAPI.fetchAutomation(prompt: "Suggest a new automation rule for my home") { suggestedRule in
-                            if let rule = suggestedRule {
-                                DispatchQueue.main.async {
-                                    // Put it into aiGeneratedAutomation so AutomationsAreaView can show the "AI Suggested Automation" block
-                                    self.aiGeneratedAutomation = rule
-                                    print("DEBUG: AI suggested rule: \(rule)")
-                                }
-                            } else {
-                                print("DEBUG: No AI rule returned (or failed to parse).")
-                            }
-                        }
+            .toolbar { toolbarContent }
+            .onAppear {
+                speechManager.logManager = logManager
+                
+                if devices.isEmpty {
+                    devices = Device.defaultDevices()
                 }
-                .onReceive(sensorTimer) { _ in
-                    syncConnectivity()
-                    NetworkManager.fetchSensorData { sensorDict in
-                        guard let sensorDict = sensorDict else { return }
+                if !automationRules.contains(where: { $0.name == "Security System" }) {
+                    automationRules.insert(securityAutomation, at: 0)
+                }
+                
+                syncConnectivity()
+                
+                NetworkManager.fetchAutomationRules { fetchedRules in
+                    if let fetched = fetchedRules {
                         DispatchQueue.main.async {
-                            updateDeviceStatuses(with: sensorDict)
+                            self.automationRules = mergeAutomationRules(local: self.automationRules, fetched: fetched)
                         }
                     }
                 }
+                
+                ChatGPTAPI.fetchAutomation(prompt: "Suggest a new automation rule for my home") { suggestedRule in
+                    if let rule = suggestedRule {
+                        DispatchQueue.main.async {
+                            self.aiGeneratedAutomation = rule
+                        }
+                    }
+                }
+            }
+            .onReceive(sensorTimer) { _ in
+                syncConnectivity()
+                NetworkManager.fetchSensorData { sensorDict in
+                    guard let sensorDict = sensorDict else { return }
+                    DispatchQueue.main.async {
+                        // Update statuses
+                        updateDeviceStatuses(with: sensorDict)
+                        // Grab simTime for the UI clock
+                        if let st = sensorDict["simTime"] as? Double {
+                            boardSimTime = st
+                        }
+                    }
+                }
+                // Also fetch logs from the firmware
+                logManager.fetchDeviceLogs { newLogs in
+                    DispatchQueue.main.async {
+                        // Overwrite or append, your call.
+                        // If you want them all, do a merge.
+                        // Here, let's just replace with the new logs from the device:
+                        logManager.logs = newLogs.reversed()
+                    }
+                }
+                // Optionally refresh automations each poll
+                NetworkManager.fetchAutomationRules { fetchedRules in
+                    if let fetched = fetchedRules {
+                        DispatchQueue.main.async {
+                            automationRules = mergeAutomationRules(local: automationRules, fetched: fetched)
+                        }
+                    }
+                }
+            }
+
+        let withSheets = NavigationView {
+            mainContent
         }
         .navigationViewStyle(StackNavigationViewStyle())
-        
-        // 3) Now attach the .sheet, .onChange, etc. to that container in smaller pieces:
-
-        let withSheets = navigationContainer
-            // Sheet for "Add Automation"
-            .sheet(isPresented: $showAddAutomation) {
-                AddAutomationView(
-                    automationRules: $automationRules,
-                    inputDevices: filteredSensors,
-                    outputDevices: filteredOutputs // Add this line
-                ) { newRule in
-                    automationRules.append(newRule)
-                    logManager.addLog("Added automation: \(newRule.name)")
-                    showAddAutomation = false
-                    // Refresh from firmware
-                    NetworkManager.fetchAutomationRules { fetchedRules in
-                        if let rules = fetchedRules {
-                            DispatchQueue.main.async {
-                                automationRules = rules
-                            }
+        .sheet(isPresented: $showAddAutomation) {
+            AddAutomationView(
+                automationRules: $automationRules,
+                inputDevices: filteredSensors,
+                outputDevices: filteredOutputs
+            ) { newRule in
+                // no local logging; firmware handles it
+                showAddAutomation = false
+                NetworkManager.fetchAutomationRules { fetchedRules in
+                    if let rules = fetchedRules {
+                        DispatchQueue.main.async {
+                            automationRules = rules
                         }
                     }
                 }
             }
-            // Sheet for editing devices
-            .sheet(item: $deviceForEdit) { device in
-                EditDeviceView(device: device) { updatedDevice in
-                    if let index = devices.firstIndex(where: { $0.id == updatedDevice.id }) {
-                        devices[index] = updatedDevice
-                        logManager.addLog("Updated device: \(updatedDevice.name)")
-                    }
-                    deviceForEdit = nil
+        }
+        .sheet(item: $deviceForEdit) { device in
+            EditDeviceView(device: device) { updatedDevice in
+                if let index = devices.firstIndex(where: { $0.id == updatedDevice.id }) {
+                    devices[index] = updatedDevice
                 }
+                deviceForEdit = nil
             }
-            // Sheet for editing automations
-            .sheet(item: $showEditAutomation) { rule in
-                if rule.name == "Security System" {
-                    // Security automation => open SecuritySettingsView
-                    SecuritySettingsView(rule: $securityAutomation)
-                } else {
-                    EditAutomationView(
-                        rule: rule,
-                        inputDevices: filteredSensors,
-                        outputDevices: filteredOutputs
-                    ) { updatedRule in
-                        if let index = automationRules.firstIndex(where: { $0.id == updatedRule.id }) {
-                            automationRules[index] = updatedRule
-                            logManager.addLog("Updated automation: \(updatedRule.name)")
-                        }
-                        showEditAutomation = nil
-                    }
-                }
-            }
-            // Sheet for event log
-            .sheet(isPresented: $showLog) {
-                EventLogView(logManager: logManager)
-            }
-            // Sheet for LCD
-            .sheet(isPresented: $showLCDSettings) {
-                LCDSettingsView()
-            }
-            // Sheet for Camera
-            .sheet(isPresented: $showCameraLivestream) {
-                CameraLivestreamView(streamURL: URL(string: "http://\(Config.globalESPIP):81/stream")!)
-            }
-            // Separate sheet for security system
-            .sheet(isPresented: $showSecuritySettings) {
+        }
+        .sheet(item: $showEditAutomation) { rule in
+            if rule.name == "Security System" {
                 SecuritySettingsView(rule: $securityAutomation)
+            } else {
+                EditAutomationView(
+                    rule: rule,
+                    inputDevices: filteredSensors,
+                    outputDevices: filteredOutputs
+                ) { updatedRule in
+                    if let index = automationRules.firstIndex(where: { $0.id == updatedRule.id }) {
+                        automationRules[index] = updatedRule
+                    }
+                    showEditAutomation = nil
+                }
             }
-        
-        // 4) Attach the .onChange calls
-        let withOnChange = withSheets
-            .onChange(of: devices) {
-                // iOS 17 no-parameter closure
-                speechManager.currentDevices = devices
-            }
-            .onChange(of: automationRules) {
-                speechManager.currentAutomations = automationRules
-            }
-            .onReceive(NotificationCenter.default.publisher(for: .voiceCommandReceived)) { notification in
-                processVoiceCommand(notification: notification)
-            }
-        
-        // 5) Return final result
-        return withOnChange
+        }
+        .sheet(isPresented: $showLog) {
+            EventLogView(logManager: logManager)
+        }
+        .sheet(isPresented: $showLCDSettings) {
+            LCDSettingsView()
+        }
+        .sheet(isPresented: $showCameraLivestream) {
+            let streamURL = URL(string: "http://\(Config.cameraIP):81/stream")!
+            CameraLivestreamView(streamURL: streamURL)
+        }
+        .sheet(isPresented: $showSecuritySettings) {
+            SecuritySettingsView(rule: $securityAutomation)
+        }
+        .onChange(of: devices) {
+            speechManager.currentDevices = devices
+            let deviceIDs = devices.map { $0.id.uuidString }
+            UserDefaults.standard.set(deviceIDs, forKey: "deviceOrder")
+        }
+        .onChange(of: automationRules) {
+            speechManager.currentAutomations = automationRules
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .voiceCommandReceived)) { notification in
+            processVoiceCommand(notification: notification)
+        }
+
+        return withSheets
     }
-    
+
     private var contentView: some View {
         ScrollView {
             VStack(spacing: 16) {
+                // Example: add a clock label that matches firmware
                 HeaderView(title: "HomeGuard Dashboard")
+                
+                // Show the scaled time from the board
+                Text("Firmware Clock: \(scaledMillisToString(boardSimTime))")
+                    .font(.caption)
+                    .foregroundColor(.gray)
+                
                 WiFiStatusView(isConnected: isConnected)
                     .padding(.horizontal)
                 
-                // Security banner
                 SecuritySystemBannerView(rule: securityAutomation) {
                     showSecuritySettings = true
                 }
                 .padding(.horizontal)
                 
-                // Automations
                 AutomationsAreaView(
                     automationRules: automationRules.filter { $0.name != "Security System" },
                     aiGeneratedAutomation: aiGeneratedAutomation,
                     onAdd: { showAddAutomation = true },
                     onAcceptAISuggestion: {
                         if let aiAutomation = aiGeneratedAutomation {
+                            // firmware logs it
                             automationRules.append(aiAutomation)
                             aiGeneratedAutomation = nil
-                            logManager.addLog("Accepted AI automation: \(aiAutomation.name)")
                             NetworkManager.fetchAutomationRules { fetchedRules in
                                 if let rules = fetchedRules {
                                     DispatchQueue.main.async {
@@ -222,39 +218,13 @@ struct DashboardView: View {
                     },
                     onDismissAISuggestion: {
                         aiGeneratedAutomation = nil
-                        logManager.addLog("Dismissed AI automation")
                     },
                     onContextAction: { rule, action in
                         handleAutomationAction(rule: rule, action: action)
                     },
                     addEnabled: !devices.isEmpty
                 )
-                
-                .onAppear {
-                    logManager.analyzeLogsForAutomation()
-                }
-                
-                // In DashboardView's body
-                .onReceive(sensorTimer) { _ in
-                    syncConnectivity()
-                    NetworkManager.fetchSensorData { sensorDict in
-                        guard let sensorDict = sensorDict else { return }
-                        DispatchQueue.main.async {
-                            updateDeviceStatuses(with: sensorDict)
-                        }
-                    }
-                    
-                    // Additional device state polling
-                    NetworkManager.fetchAutomationRules { fetchedRules in
-                        if let rules = fetchedRules {
-                            DispatchQueue.main.async {
-                                automationRules = rules
-                            }
-                        }
-                    }
-                }
-                
-                // Devices
+
                 DevicesAreaView(
                     devices: $devices,
                     onSelect: { device in
@@ -269,11 +239,11 @@ struct DashboardView: View {
                     onContextAction: { device, action in
                         handleDeviceAction(device: device, action: action)
                     },
-                    logManager: logManager
+                    logManager: logManager,
+                    isReordering: isReordering
                 )
                 .padding(.horizontal)
-                
-                // Voice control
+
                 VoiceControlButton(speechManager: speechManager)
             }
             .padding(.vertical)
@@ -284,9 +254,9 @@ struct DashboardView: View {
         Group {
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button(action: {
-                    showError("Dashboard rearrangement coming soon!")
+                    isReordering.toggle()
                 }) {
-                    Image(systemName: "gearshape.fill")
+                    Image(systemName: isReordering ? "checkmark" : "gearshape.fill")
                         .font(.title)
                 }
             }
@@ -299,25 +269,23 @@ struct DashboardView: View {
         }
     }
     
-    // Only includes sensor devices
     private var filteredSensors: [Device] {
-        devices.filter { device in
-            device.deviceType == .sensor ||
-            device.deviceType == .temperature ||
-            device.deviceType == .humidity ||
-            device.deviceType == .motion
+        devices.filter { d in
+            d.deviceType == .sensor ||
+            d.deviceType == .temperature ||
+            d.deviceType == .humidity ||
+            d.deviceType == .motion
         }
     }
     
-    // Adds 'fan', 'light', 'servo', 'buzzer', 'statusLED', 'door' as output devices
     private var filteredOutputs: [Device] {
-        devices.filter { device in
-            device.deviceType == .fan ||
-            device.deviceType == .light ||
-            device.deviceType == .servo ||
-            device.deviceType == .buzzer ||
-            device.deviceType == .statusLED ||
-            device.deviceType == .door
+        devices.filter { d in
+            d.deviceType == .fan ||
+            d.deviceType == .light ||
+            d.deviceType == .servo ||
+            d.deviceType == .buzzer ||
+            d.deviceType == .statusLED ||
+            d.deviceType == .door
         }
     }
     
@@ -325,31 +293,8 @@ struct DashboardView: View {
         guard let userInfo = notification.userInfo,
               let command = userInfo["command"] as? String,
               let fullText = userInfo["fullText"] as? String else { return }
-        print("Voice command received: \(command) from: \(fullText)")
-        
         let lowerText = fullText.lowercased()
-        for device in devices {
-            let deviceName = device.name.lowercased()
-            if lowerText.contains(deviceName) {
-                if lowerText.contains("turn on") {
-                    NetworkManager.sendCommand(port: device.port, action: "on") { state in
-                        DispatchQueue.main.async {
-                            if let state = state {
-                                logManager.addLog("\(device.name) turned \(state)")
-                            }
-                        }
-                    }
-                } else if lowerText.contains("turn off") {
-                    NetworkManager.sendCommand(port: device.port, action: "off") { state in
-                        DispatchQueue.main.async {
-                            if let state = state {
-                                logManager.addLog("\(device.name) turned \(state)")
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        // Example: you can parse or do nothing here, since SpeechManager also does it
     }
     
     private func handleAutomationAction(rule: AutomationRule, action: AutomationContextAction) {
@@ -358,14 +303,12 @@ struct DashboardView: View {
             showEditAutomation = rule
         case .delete:
             if rule.name != "Security System" {
-                NetworkManager.deleteAutomationRule(ruleName: rule.name) { success in
-                DispatchQueue.main.async {
-                    if success {
-                        // Now remove it from local
-                        if let idx = automationRules.firstIndex(where: { $0.id == rule.id }) {
+                NetworkManager.deleteAutomationRule(uid: rule.id) { success in
+                    DispatchQueue.main.async {
+                        if success {
+                            if let idx = automationRules.firstIndex(where: { $0.id == rule.id }) {
                                 automationRules.remove(at: idx)
                             }
-                            logManager.addLog("Deleted automation: \(rule.name)")
                         } else {
                             showError("Failed to delete automation on device.")
                         }
@@ -374,21 +317,19 @@ struct DashboardView: View {
             } else {
                 showError("Security System cannot be deleted.")
             }
-        case .toggleOn:
-            logManager.addLog("\(rule.name) toggled on.")
-            NetworkManager.fetchAutomationRules { fetchedRules in
-                if let rules = fetchedRules {
-                    DispatchQueue.main.async {
-                        automationRules = rules
-                    }
-                }
-            }
-        case .toggleOff:
-            logManager.addLog("\(rule.name) toggled off.")
-            NetworkManager.fetchAutomationRules { fetchedRules in
-                if let rules = fetchedRules {
-                    DispatchQueue.main.async {
-                        automationRules = rules
+        case .toggleOn, .toggleOff:
+            NetworkManager.toggleAutomationRule(uid: rule.id) { success in
+                DispatchQueue.main.async {
+                    if !success {
+                        showError("Failed to toggle automation on device.")
+                    } else {
+                        NetworkManager.fetchAutomationRules { fetched in
+                            if let fetched = fetched {
+                                DispatchQueue.main.async {
+                                    self.automationRules = mergeAutomationRules(local: self.automationRules, fetched: fetched)
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -417,7 +358,7 @@ struct DashboardView: View {
         } else {
             temperatureStr = "NaN"
         }
-        
+
         let humidityStr: String
         if let humNum = sensorDict["humidity"] as? Double {
             humidityStr = String(format: "%.1f", humNum)
@@ -426,18 +367,18 @@ struct DashboardView: View {
         } else {
             humidityStr = "NaN"
         }
-        
+
         var fahrenheitStr = "NaN"
         if let celsius = Double(temperatureStr) {
             let fahrenheit = celsius * 9.0 / 5.0 + 32.0
             fahrenheitStr = String(format: "%.0f", fahrenheit)
         }
         let temperatureCombined = fahrenheitStr + "°F, " + humidityStr + "%"
-        
+
         let pir = sensorDict["pir"] as? String ?? "No motion"
         let rfid = sensorDict["rfid"] as? String ?? "Active"
         let lcd = sensorDict["lcd"] as? String ?? "Ready"
-        
+
         for i in devices.indices {
             switch devices[i].deviceType {
             case .temperature:
@@ -454,7 +395,7 @@ struct DashboardView: View {
                 break
             }
         }
-        // e.g. after your switch statement, still inside updateDeviceStatuses
+
         if let strip1 = sensorDict["strip1Color"] as? String {
             if let idx = devices.firstIndex(where: { $0.port == "GPIO32" }) {
                 devices[idx].isOn = (strip1 != "000000")
@@ -479,33 +420,31 @@ struct DashboardView: View {
                 devices[idx].status = buzzerVal ? "On" : "Off"
             }
         }
-
         if let ledVal = sensorDict["statusLedOn"] as? Bool {
             if let idx = devices.firstIndex(where: { $0.port == "GPIO2" }) {
                 devices[idx].isOn = ledVal
                 devices[idx].status = ledVal ? "On" : "Off"
             }
         }
-        
-        // Add these new parsers
-            if let fanState = sensorDict["fanOn"] as? Bool {
-                updateDeviceStatus(port: "GPIO26", isOn: fanState)
-            }
-            if let buzzerState = sensorDict["buzzerOn"] as? Bool {
-                updateDeviceStatus(port: "GPIO17", isOn: buzzerState)
-            }
-            if let strip1State = sensorDict["strip1On"] as? Bool {
-                updateDeviceStatus(port: "GPIO32", isOn: strip1State)
-            }
-            if let strip2State = sensorDict["strip2On"] as? Bool {
-                updateDeviceStatus(port: "GPIO33", isOn: strip2State)
-            }
-            if let servo1Angle = sensorDict["servo1"] as? Int {
-                updateServoStatus(port: "GPIO27", angle: servo1Angle)
-            }
-            if let servo2Angle = sensorDict["servo2"] as? Int {
-                updateServoStatus(port: "GPIO14", angle: servo2Angle)
-            }
+
+        if let fanState = sensorDict["fanOn"] as? Bool {
+            updateDeviceStatus(port: "GPIO26", isOn: fanState)
+        }
+        if let buzzerState = sensorDict["buzzerOn"] as? Bool {
+            updateDeviceStatus(port: "GPIO17", isOn: buzzerState)
+        }
+        if let strip1State = sensorDict["strip1On"] as? Bool {
+            updateDeviceStatus(port: "GPIO32", isOn: strip1State)
+        }
+        if let strip2State = sensorDict["strip2On"] as? Bool {
+            updateDeviceStatus(port: "GPIO33", isOn: strip2State)
+        }
+        if let servo1Angle = sensorDict["servo1"] as? Int {
+            updateServoStatus(port: "GPIO27", angle: servo1Angle)
+        }
+        if let servo2Angle = sensorDict["servo2"] as? Int {
+            updateServoStatus(port: "GPIO14", angle: servo2Angle)
+        }
     }
     
     private func updateDeviceStatus(port: String, isOn: Bool) {
@@ -517,7 +456,7 @@ struct DashboardView: View {
 
     private func updateServoStatus(port: String, angle: Int) {
         if let index = devices.firstIndex(where: { $0.port == port }) {
-            let isOpen = (angle > 5) // Adjust based on your servo configuration
+            let isOpen = (angle > 5)
             devices[index].status = isOpen ? "Opened" : "Closed"
             devices[index].isOn = isOpen
         }
@@ -541,6 +480,7 @@ struct DashboardView: View {
         }
     }
 }
+
 
 struct DashboardView_Previews: PreviewProvider {
     static var previews: some View {

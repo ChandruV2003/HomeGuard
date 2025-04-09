@@ -2,6 +2,10 @@ import Foundation
 
 struct Config {
     static let globalESPIP: String = "172.20.10.4"
+    static let cameraIP: String = "172.20.10.6"
+    
+    // For the accelerated time
+    static let timeAcceleration: Double = 1440.0
 }
 
 // Updated port mappings...
@@ -74,7 +78,7 @@ extension Device {
             Device.create(name: "RFID Sensor", status: "Active", deviceType: .rfid, port: availablePorts[.rfid]?.first ?? ""),
             Device.create(name: "LCD Screen", status: "Ready", deviceType: .lcd, port: availablePorts[.lcd]?.first ?? ""),
             Device.create(name: "Buzzer", status: "Off", deviceType: .buzzer, port: availablePorts[.buzzer]?.first ?? ""),
-            Device.create(name: "Main Fan", status: "Off", deviceType: .fan, port: availablePorts[.fan]?.first ?? ""),
+            Device.create(name: "Fan", status: "Off", deviceType: .fan, port: availablePorts[.fan]?.first ?? ""),
             Device.create(name: "ESP-CAM", status: "Streaming", deviceType: .espCam, port: availablePorts[.espCam]?.first ?? "")
         ]
     }
@@ -146,3 +150,40 @@ func mergeAutomationRules(local: [AutomationRule], fetched: [AutomationRule]) ->
     // Return the merged values; you might sort them if you need a specific order.
     return Array(mergedDict.values)
 }
+
+func scaledMillisToString(_ scaledMillis: Double) -> String {
+    // Convert to integer total seconds
+    let totalSeconds = Int(scaledMillis / 1000.0)
+    
+    // Determine how many days have elapsed
+    let daysElapsed = totalSeconds / (24 * 3600)
+    // We only care about mod 7 for M..Su
+    let dayIndex = daysElapsed % 7
+    
+    // Same abbreviations used in the firmware
+    let dayAbbreviations = ["M", "Tu", "W", "Th", "F", "Sa", "Su"]
+    let currentDay = dayAbbreviations[dayIndex]
+    
+    // leftover seconds in the current day
+    let leftover = totalSeconds % (24 * 3600)
+    let hour24 = leftover / 3600
+    let minute = (leftover % 3600) / 60
+    
+    // Convert 24h -> 12h
+    var displayHour = hour24
+    var ampm = "AM"
+    if displayHour == 0 {
+        displayHour = 12
+        ampm = "AM"
+    } else if displayHour == 12 {
+        ampm = "PM"
+    } else if displayHour > 12 {
+        displayHour -= 12
+        ampm = "PM"
+    }
+    
+    return String(format: "%@ %d:%02d %@", currentDay, displayHour, minute, ampm)
+}
+
+
+

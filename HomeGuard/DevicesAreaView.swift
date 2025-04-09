@@ -1,10 +1,13 @@
 import SwiftUI
+import UniformTypeIdentifiers
+
 
 struct DevicesAreaView: View {
     @Binding var devices: [Device]
     var onSelect: (Device) -> Void
     var onContextAction: (Device, DeviceContextAction) -> Void
     @ObservedObject var logManager: EventLogManager
+    var isReordering: Bool = false
     
     // Grid layout: two columns.
     let columns = [
@@ -41,13 +44,27 @@ struct DevicesAreaView: View {
                         ForEach(sortedDeviceTypes, id: \.self) { deviceType in
                             ForEach(groupedDeviceTypes[deviceType] ?? []) { device in
                                 if let bindingDevice = binding(for: device) {
-                                    DeviceCardView(
+                                    let card = DeviceCardView(
                                         device: bindingDevice,
                                         devices: $devices,
                                         logManager: logManager,
                                         onSelect: { onSelect(bindingDevice.wrappedValue) },
                                         onEdit: { onContextAction(bindingDevice.wrappedValue, .edit) }
                                     )
+                                    
+                                    // Condition: only allow drag if isReordering
+                                    if isReordering {
+                                        card
+                                            .onDrag {
+                                                NSItemProvider(object: device.id.uuidString as NSString)
+                                            }
+                                            .onDrop(
+                                                of: [UTType.text.identifier],
+                                                delegate: DeviceDropDelegate(item: device, devices: $devices)
+                                            )
+                                    } else {
+                                        card
+                                    }
                                 }
                             }
                         }

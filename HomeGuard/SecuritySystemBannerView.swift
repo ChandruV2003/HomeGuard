@@ -17,7 +17,7 @@ struct SecuritySystemBannerView: View {
                         .font(.headline)
                     Text(rule.action)
                         .font(.subheadline)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(.green)
                 }
                 Spacer()
             }
@@ -52,7 +52,7 @@ struct SecuritySystemBannerView_Previews: PreviewProvider {
                 id: UUID().uuidString,
                 name: "Security System",
                 condition: "RFID Allowed",
-                action: "Display: Welcome; Buzzer: Off",
+                action: "Active",
                 activeDays: "M,Tu,W,Th,F,Sa,Su",
                 triggerEnabled: true,
                 triggerTime: Date()
