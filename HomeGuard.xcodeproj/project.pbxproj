@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		DB4B20E52DA60171005CF319 /* .gitignore in Resources */ = {isa = PBXBuildFile; fileRef = DB4B20E42DA60171005CF319 /* .gitignore */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		DB33DBA52D6839B8006EA971 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -27,11 +31,12 @@
 		DB33DB942D6839B7006EA971 /* HomeGuard.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = HomeGuard.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		DB33DBA42D6839B8006EA971 /* HomeGuardTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = HomeGuardTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		DB33DBAE2D6839B8006EA971 /* HomeGuardUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = HomeGuardUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		DB4B20E42DA60171005CF319 /* .gitignore */ = {isa = PBXFileReference; lastKnownFileType = text; path = .gitignore; sourceTree = "<group>"; };
 		DB812C512D80C07C00F1CDD6 /* HomeGuard.xctestplan */ = {isa = PBXFileReference; lastKnownFileType = text; path = HomeGuard.xctestplan; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		DB65A6FF2D9B367E002CD7A5 /* Exceptions for "HomeGuard" folder in "HomeGuard" target */ = {
+		DBBC5E882DA48E8E0096DB17 /* Exceptions for "HomeGuard" folder in "HomeGuard" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
@@ -44,7 +49,7 @@
 		DB33DB962D6839B7006EA971 /* HomeGuard */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
-				DB65A6FF2D9B367E002CD7A5 /* Exceptions for "HomeGuard" folder in "HomeGuard" target */,
+				DBBC5E882DA48E8E0096DB17 /* Exceptions for "HomeGuard" folder in "HomeGuard" target */,
 			);
 			path = HomeGuard;
 			sourceTree = "<group>";
@@ -89,6 +94,7 @@
 		DB33DB8B2D6839B7006EA971 = {
 			isa = PBXGroup;
 			children = (
+				DB4B20E42DA60171005CF319 /* .gitignore */,
 				DB812C512D80C07C00F1CDD6 /* HomeGuard.xctestplan */,
 				DB33DB962D6839B7006EA971 /* HomeGuard */,
 				DB33DBA72D6839B8006EA971 /* HomeGuardTests */,
@@ -227,6 +233,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				DB4B20E52DA60171005CF319 /* .gitignore in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -415,6 +422,8 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = HomeGuard/Info.plist;
+				INFOPLIST_KEY_LSApplicationCategoryType = "";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "This app needs to connect to devices on your local network.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "This app needs access to the microphone for voice recognition";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "This app uses speech recognition to process voice commands for controlling smart home devices.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -447,6 +456,8 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = HomeGuard/Info.plist;
+				INFOPLIST_KEY_LSApplicationCategoryType = "";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "This app needs to connect to devices on your local network.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "This app needs access to the microphone for voice recognition";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "This app uses speech recognition to process voice commands for controlling smart home devices.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;

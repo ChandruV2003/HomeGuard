@@ -49,7 +49,7 @@ struct SecuritySystemBannerView_Previews: PreviewProvider {
     static var previews: some View {
         SecuritySystemBannerView(
             rule: AutomationRule(
-                id: UUID(),
+                id: UUID().uuidString,
                 name: "Security System",
                 condition: "RFID Allowed",
                 action: "Display: Welcome; Buzzer: Off",

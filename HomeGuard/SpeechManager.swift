@@ -98,8 +98,38 @@ class SpeechManager: ObservableObject {
     func processCommand(_ text: String) {
         let lowerText = text.lowercased()
         var commandProcessed = false
+
+        // Specific handling for garage door
+        if lowerText.contains("garage door") {
+            if lowerText.contains("open") {
+                NetworkManager.sendCommand(port: "GPIO14", action: "open") { _ in }
+                logManager?.addLog("Garage door servo opened via voice")
+                commandProcessed = true
+            } else if lowerText.contains("close") {
+                NetworkManager.sendCommand(port: "GPIO14", action: "close") { _ in }
+                logManager?.addLog("Garage door servo closed via voice")
+                commandProcessed = true
+            }
+        }
         
-        // Check each device
+        // Specific handling for front door
+        if lowerText.contains("front door") {
+            if lowerText.contains("open") {
+                if let frontDoor = currentDevices.first(where: { $0.name.lowercased().contains("front door") }) {
+                    NetworkManager.sendCommand(port: frontDoor.port, action: "open") { _ in }
+                    logManager?.addLog("\(frontDoor.name) opened via voice")
+                    commandProcessed = true
+                }
+            } else if lowerText.contains("close") {
+                if let frontDoor = currentDevices.first(where: { $0.name.lowercased().contains("front door") }) {
+                    NetworkManager.sendCommand(port: frontDoor.port, action: "close") { _ in }
+                    logManager?.addLog("\(frontDoor.name) closed via voice")
+                    commandProcessed = true
+                }
+            }
+        }
+        
+        // Generic loop for all other devices
         for device in currentDevices {
             let deviceName = device.name.lowercased()
             if lowerText.contains(deviceName) {
@@ -107,45 +137,13 @@ class SpeechManager: ObservableObject {
                     NetworkManager.sendCommand(port: device.port, action: "on") { _ in }
                     logManager?.addLog("\(device.name) turned on via voice")
                     commandProcessed = true
-                }
-                else if lowerText.contains("turn off") {
+                } else if lowerText.contains("turn off") {
                     NetworkManager.sendCommand(port: device.port, action: "off") { _ in }
                     logManager?.addLog("\(device.name) turned off via voice")
                     commandProcessed = true
                 }
-                // expand: open, close, etc.
             }
         }
-        // --- Branch for garage door commands ---
-            if lowerText.contains("garage door") {
-                // If the user says "open garage door" or "close garage door"
-                if lowerText.contains("open") {
-                    NetworkManager.sendCommand(port: "GPIO14", action: "open") { _ in }
-                    logManager?.addLog("Garage door servo opened via voice")
-                    commandProcessed = true
-                } else if lowerText.contains("close") {
-                    NetworkManager.sendCommand(port: "GPIO14", action: "close") { _ in }
-                    logManager?.addLog("Garage door servo closed via voice")
-                    commandProcessed = true
-                }
-            }
-            
-            // --- Loop through known devices for "turn on"/"turn off" commands ---
-            for device in currentDevices {
-                let deviceName = device.name.lowercased()
-                if lowerText.contains(deviceName) {
-                    if lowerText.contains("turn on") {
-                        NetworkManager.sendCommand(port: device.port, action: "on") { _ in }
-                        logManager?.addLog("\(device.name) turned on via voice")
-                        commandProcessed = true
-                    }
-                    else if lowerText.contains("turn off") {
-                        NetworkManager.sendCommand(port: device.port, action: "off") { _ in }
-                        logManager?.addLog("\(device.name) turned off via voice")
-                        commandProcessed = true
-                    }
-                }
-            }
         
         if commandProcessed {
             DispatchQueue.main.async {
@@ -155,7 +153,6 @@ class SpeechManager: ObservableObject {
                 self.commandRecognized = false
                 self.feedbackMessage = ""
                 self.recognizedText = ""
-                // If you want to also clear the colored text:
                 self.recognizedAttributed = AttributedString("")
             }
         }

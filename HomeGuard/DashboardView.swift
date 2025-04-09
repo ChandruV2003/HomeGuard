@@ -31,7 +31,7 @@ struct DashboardView: View {
     
     // Default security automation (non-deletable)
     @State private var securityAutomation: AutomationRule = AutomationRule(
-        id: UUID(),
+        id: UUID().uuidString,
         name: "Security System",
         condition: "RFID Allowed",
         action: "Display: Welcome; Buzzer: Off",
@@ -70,12 +70,25 @@ struct DashboardView: View {
                     syncConnectivity()
                     // Fetch automation rules from firmware on launch
                     NetworkManager.fetchAutomationRules { fetchedRules in
-                        if let rules = fetchedRules {
+                        if let fetched = fetchedRules {
                             DispatchQueue.main.async {
-                                automationRules = rules
+                                // Merge fetched rules with any local ones
+                                self.automationRules = mergeAutomationRules(local: self.automationRules, fetched: fetched)
+                                print("DEBUG: Merged automation rules count: \(self.automationRules.count)")
                             }
                         }
                     }
+                    ChatGPTAPI.fetchAutomation(prompt: "Suggest a new automation rule for my home") { suggestedRule in
+                            if let rule = suggestedRule {
+                                DispatchQueue.main.async {
+                                    // Put it into aiGeneratedAutomation so AutomationsAreaView can show the "AI Suggested Automation" block
+                                    self.aiGeneratedAutomation = rule
+                                    print("DEBUG: AI suggested rule: \(rule)")
+                                }
+                            } else {
+                                print("DEBUG: No AI rule returned (or failed to parse).")
+                            }
+                        }
                 }
                 .onReceive(sensorTimer) { _ in
                     syncConnectivity()
@@ -95,8 +108,9 @@ struct DashboardView: View {
             // Sheet for "Add Automation"
             .sheet(isPresented: $showAddAutomation) {
                 AddAutomationView(
+                    automationRules: $automationRules,
                     inputDevices: filteredSensors,
-                    outputDevices: filteredOutputs
+                    outputDevices: filteredOutputs // Add this line
                 ) { newRule in
                     automationRules.append(newRule)
                     logManager.addLog("Added automation: \(newRule.name)")
@@ -216,6 +230,30 @@ struct DashboardView: View {
                     addEnabled: !devices.isEmpty
                 )
                 
+                .onAppear {
+                    logManager.analyzeLogsForAutomation()
+                }
+                
+                // In DashboardView's body
+                .onReceive(sensorTimer) { _ in
+                    syncConnectivity()
+                    NetworkManager.fetchSensorData { sensorDict in
+                        guard let sensorDict = sensorDict else { return }
+                        DispatchQueue.main.async {
+                            updateDeviceStatuses(with: sensorDict)
+                        }
+                    }
+                    
+                    // Additional device state polling
+                    NetworkManager.fetchAutomationRules { fetchedRules in
+                        if let rules = fetchedRules {
+                            DispatchQueue.main.async {
+                                automationRules = rules
+                            }
+                        }
+                    }
+                }
+                
                 // Devices
                 DevicesAreaView(
                     devices: $devices,
@@ -319,10 +357,20 @@ struct DashboardView: View {
         case .edit:
             showEditAutomation = rule
         case .delete:
-            if rule.name != "Security System",
-               let idx = automationRules.firstIndex(where: { $0.id == rule.id }) {
-                automationRules.remove(at: idx)
-                logManager.addLog("Deleted automation: \(rule.name)")
+            if rule.name != "Security System" {
+                NetworkManager.deleteAutomationRule(ruleName: rule.name) { success in
+                DispatchQueue.main.async {
+                    if success {
+                        // Now remove it from local
+                        if let idx = automationRules.firstIndex(where: { $0.id == rule.id }) {
+                                automationRules.remove(at: idx)
+                            }
+                            logManager.addLog("Deleted automation: \(rule.name)")
+                        } else {
+                            showError("Failed to delete automation on device.")
+                        }
+                    }
+                }
             } else {
                 showError("Security System cannot be deleted.")
             }
@@ -437,6 +485,41 @@ struct DashboardView: View {
                 devices[idx].isOn = ledVal
                 devices[idx].status = ledVal ? "On" : "Off"
             }
+        }
+        
+        // Add these new parsers
+            if let fanState = sensorDict["fanOn"] as? Bool {
+                updateDeviceStatus(port: "GPIO26", isOn: fanState)
+            }
+            if let buzzerState = sensorDict["buzzerOn"] as? Bool {
+                updateDeviceStatus(port: "GPIO17", isOn: buzzerState)
+            }
+            if let strip1State = sensorDict["strip1On"] as? Bool {
+                updateDeviceStatus(port: "GPIO32", isOn: strip1State)
+            }
+            if let strip2State = sensorDict["strip2On"] as? Bool {
+                updateDeviceStatus(port: "GPIO33", isOn: strip2State)
+            }
+            if let servo1Angle = sensorDict["servo1"] as? Int {
+                updateServoStatus(port: "GPIO27", angle: servo1Angle)
+            }
+            if let servo2Angle = sensorDict["servo2"] as? Int {
+                updateServoStatus(port: "GPIO14", angle: servo2Angle)
+            }
+    }
+    
+    private func updateDeviceStatus(port: String, isOn: Bool) {
+        if let index = devices.firstIndex(where: { $0.port == port }) {
+            devices[index].isOn = isOn
+            devices[index].status = isOn ? "On" : "Off"
+        }
+    }
+
+    private func updateServoStatus(port: String, angle: Int) {
+        if let index = devices.firstIndex(where: { $0.port == port }) {
+            let isOpen = (angle > 5) // Adjust based on your servo configuration
+            devices[index].status = isOpen ? "Opened" : "Closed"
+            devices[index].isOn = isOpen
         }
     }
     

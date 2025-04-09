@@ -30,7 +30,7 @@ struct SensorData: Codable, Equatable, Hashable {
     let humidity: Double
 }
 
-struct Device: Identifiable, Hashable {
+struct Device: Identifiable, Equatable, Hashable {
     let id: UUID
     var name: String
     var ipAddress: String
@@ -81,16 +81,21 @@ extension Device {
 }
 
 struct AutomationRule: Identifiable, Codable, Equatable {
-    let id: UUID
+    let id: String  // Changed from UUID to String
     var name: String
     var condition: String
     var action: String
     var activeDays: String
     var triggerEnabled: Bool
     var triggerTime: Date
-    // New properties for editing:
-    var inputDeviceID: UUID?
-    var outputDeviceID: UUID?
+    // New properties for editing
+    var inputDeviceID: String?
+    var outputDeviceID: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id = "uid"  // Map JSON "uid" to the id property
+        case name, condition, action, activeDays, triggerEnabled, triggerTime, inputDeviceID, outputDeviceID
+    }
 }
 
 enum AutomationContextAction {
@@ -107,7 +112,7 @@ func pollSensorData(for device: Device, completion: @escaping (SensorData?) -> V
         return
     }
     URLSession.shared.dataTask(with: url) { data, _, error in
-        if let data = data {
+        if let data = data { 
             let decoder = JSONDecoder()
             do {
                 let sensorData = try decoder.decode(SensorData.self, from: data)
@@ -125,4 +130,19 @@ func pollSensorData(for device: Device, completion: @escaping (SensorData?) -> V
 
 extension Notification.Name {
     static let voiceCommandReceived = Notification.Name("voiceCommandReceived")
+}
+
+func mergeAutomationRules(local: [AutomationRule], fetched: [AutomationRule]) -> [AutomationRule] {
+    // Create a dictionary based on fetched rules, keyed by the rule’s id.
+    var mergedDict = Dictionary(uniqueKeysWithValues: fetched.map { ($0.id, $0) })
+    
+    // Add any local rule that isn't in the fetched results.
+    for rule in local {
+        if mergedDict[rule.id] == nil {
+            mergedDict[rule.id] = rule
+        }
+    }
+    
+    // Return the merged values; you might sort them if you need a specific order.
+    return Array(mergedDict.values)
 }

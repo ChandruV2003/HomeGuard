@@ -101,15 +101,32 @@ struct NetworkManager {
         }
         URLSession.shared.dataTask(with: url) { data, _, error in
             guard let data = data, error == nil else {
+                print("Fetch automation rules error: \(error?.localizedDescription ?? "unknown error")")
                 completion(nil)
                 return
             }
             let decoder = JSONDecoder()
+            // Use secondsSince1970 (or millisecondsSince1970 if that’s what your firmware uses)
+            decoder.dateDecodingStrategy = .secondsSince1970
             if let rules = try? decoder.decode([AutomationRule].self, from: data) {
                 completion(rules)
             } else {
+                // Print the raw JSON to help debug what is coming back.
+                let raw = String(data: data, encoding: .utf8) ?? "Unable to convert data to string"
+                print("Decoding failed for automation rules. Data: \(raw)")
                 completion(nil)
             }
+        }.resume()
+    }
+    
+    static func deleteAutomationRule(ruleName: String, completion: @escaping (Bool) -> Void) {
+        guard let url = URL(string: "http://\(Config.globalESPIP)/delete_rule?name=\(ruleName)") else {
+            completion(false)
+            return
+        }
+        URLSession.shared.dataTask(with: url) { data, response, error in
+            let success = (response as? HTTPURLResponse)?.statusCode == 200 && error == nil
+            completion(success)
         }.resume()
     }
     

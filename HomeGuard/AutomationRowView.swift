@@ -67,7 +67,7 @@ struct AutomationRowView_Previews: PreviewProvider {
     static var previews: some View {
         AutomationRowView(
             rule: AutomationRule(
-                id: UUID(),
+                id: UUID().uuidString,
                 name: "Turn on Fan",
                 condition: "Temp > 80°F",
                 action: "Fan On",

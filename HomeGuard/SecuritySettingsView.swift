@@ -3,8 +3,8 @@ import SwiftUI
 struct SecuritySettingsView: View {
     @Binding var rule: AutomationRule
     
-    @State private var goodCard: String = "ABCD1234"
-    @State private var badCard: String = "DEADBEEF"
+    @State private var goodCard: String = "044A565A7F7080"
+    @State private var badCard: String = "046A2B4AD55E80"
     @State private var grantedMsg: String = "Access Granted"
     @State private var deniedMsg: String  = "Access Denied"
     @State private var buzzerDurationMs: Double = 1000
@@ -86,13 +86,15 @@ struct SecuritySettingsView: View {
 
 struct SecuritySettingsView_Previews: PreviewProvider {
     @State static var rule = AutomationRule(
-        id: UUID(),
+        id: UUID().uuidString,  // Use string-based ID
         name: "Security Automation",
         condition: "RFID Allowed",
         action: "Display: Welcome; Buzzer: Off",
         activeDays: "M,Tu,W,Th,F,Sa,Su",
         triggerEnabled: true,
-        triggerTime: Date()
+        triggerTime: Date(),
+        inputDeviceID: nil,
+        outputDeviceID: nil
     )
     
     static var previews: some View {

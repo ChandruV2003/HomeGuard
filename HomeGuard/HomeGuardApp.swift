@@ -3,6 +3,8 @@ import Speech
 
 @main
 struct HomeGuardApp: App {
+    @StateObject private var logManager = EventLogManager()
+
     init() {
         SFSpeechRecognizer.requestAuthorization { authStatus in
             switch authStatus {
@@ -17,6 +19,7 @@ struct HomeGuardApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .environmentObject(logManager)
         }
     }
 }

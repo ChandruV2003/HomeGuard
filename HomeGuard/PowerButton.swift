@@ -14,26 +14,25 @@ struct PowerButton: View {
             // Send a toggle command
             NetworkManager.sendCommand(port: device.port, action: "toggle") { state in
                 DispatchQueue.main.async {
-                    if let state = state {
-                        // For door/servo devices, we expect state "Opened" or "Closed"
-                        if device.deviceType == .door || device.deviceType == .servo {
-                            if state == "Opened" {
-                                device.status = "Opened"
-                                device.isOn = true
-                            } else {
-                                device.status = "Closed"
-                                device.isOn = false
-                            }
-                        } else {
-                            // Default for other devices: assume state "On" or "Off"
-                            let actualOn = (state == "On") ? true : false
-                            device.status = actualOn ? "On" : "Off"
-                            device.isOn = actualOn
-                        }
-                        logManager.addLog("\(device.name) is now \(device.status)")
-                    } else {
+                    guard let state = state else {
                         logManager.addLog("Failed to update \(device.name)")
+                        return
                     }
+                    
+                    // Handle different device types
+                    switch device.deviceType {
+                    case .door, .servo:
+                        device.status = state
+                        device.isOn = (state == "Opened")
+                    case .light, .fan, .buzzer:
+                        device.isOn = (state == "On")
+                        device.status = device.isOn ? "On" : "Off"
+                    default:
+                        device.isOn.toggle()
+                        device.status = device.isOn ? "On" : "Off"
+                    }
+                    
+                    logManager.addLog("\(device.name) is now \(device.status)")
                 }
             }
         }) {

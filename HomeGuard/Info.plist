@@ -1,18 +1,79 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>NSAppTransportSecurity</key>
-	<dict/>
-	<key>NSExceptionDomains</key>
-	<dict>
-		<key>192.168.4.2</key>
-		<dict>
-			<key>NSTemporaryExceptionAllowsInsecure-HTTPLoads</key>
-			<true/>
-			<key>NSIncludesSubdomains</key>
-			<true/>
-		</dict>
-	</dict>
+
+    <!-- Basic app bundle properties -->
+    <key>CFBundleName</key>
+    <string>$(PRODUCT_NAME)</string>
+
+    <key>CFBundleIdentifier</key>
+    <string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+
+    <!-- App version / build number -->
+    <key>CFBundleVersion</key>
+    <string>$(CURRENT_PROJECT_VERSION)</string>
+    <key>CFBundleShortVersionString</key>
+    <string>$(MARKETING_VERSION)</string>
+
+    <!-- iPhone requirement -->
+    <key>LSRequiresIPhoneOS</key>
+    <true/>
+
+    <!-- Launch screen storyboard -->
+    <key>UILaunchStoryboardName</key>
+    <string>LaunchScreen</string>
+
+    <!-- Privacy usage descriptions -->
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>This app needs to discover and communicate with devices on your local network.</string>
+
+    <key>NSMicrophoneUsageDescription</key>
+    <string>This app uses the microphone for voice commands or audio recording.</string>
+
+    <key>NSSpeechRecognitionUsageDescription</key>
+    <string>This app uses speech recognition to accept voice commands.</string>
+
+    <!-- App Transport Security (ATS) -->
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <!-- Enables non-HTTPS (insecure) loads. You might limit this to dev builds. -->
+        <key>NSAllowsArbitraryLoads</key>
+        <true/>
+
+        <!-- Allows local networking specifically. -->
+        <key>NSAllowsLocalNetworking</key>
+        <true/>
+
+        <!-- Example exception domains for numeric IPs used by your ESP32/ESP-CAM. -->
+        <key>NSExceptionDomains</key>
+        <dict>
+            <key>172.20.10.1</key>
+            <dict>
+                <key>NSIncludesSubdomains</key>
+                <true/>
+                <key>NSTemporaryExceptionAllowsInsecureHTTPLoads</key>
+                <true/>
+            </dict>
+
+            <key>172.20.10.5</key>
+            <dict>
+                <key>NSIncludesSubdomains</key>
+                <true/>
+                <key>NSTemporaryExceptionAllowsInsecureHTTPLoads</key>
+                <true/>
+            </dict>
+
+            <key>172.20.10.60</key>
+            <dict>
+                <key>NSIncludesSubdomains</key>
+                <true/>
+                <key>NSTemporaryExceptionAllowsInsecureHTTPLoads</key>
+                <true/>
+            </dict>
+        </dict>
+    </dict>
+
 </dict>
 </plist>

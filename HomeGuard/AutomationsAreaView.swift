@@ -19,14 +19,12 @@ struct AutomationsAreaView: View {
                 Text("Automations")
                     .font(.headline)
                 Spacer()
-                if automationRules.isEmpty {
-                    Button(action: onAdd) {
-                        Image(systemName: "plus.circle")
-                            .font(.title2)
-                    }
-                    .foregroundColor(addEnabled ? .blue : .gray)
-                    .disabled(!addEnabled)
+                Button(action: onAdd) {
+                    Image(systemName: "plus.circle")
+                        .font(.title2)
                 }
+                .foregroundColor(addEnabled ? .blue : .gray)
+                .disabled(!addEnabled)
             }
             .padding()
             .frame(maxWidth: .infinity)
@@ -98,7 +96,7 @@ struct AutomationsAreaView_Previews: PreviewProvider {
         AutomationsAreaView(
             automationRules: [
                 AutomationRule(
-                    id: UUID(),
+                    id: UUID().uuidString,
                     name: "Turn on Fan",
                     condition: "Temp > 80°F",
                     action: "Fan On",
@@ -108,7 +106,7 @@ struct AutomationsAreaView_Previews: PreviewProvider {
                 )
             ],
             aiGeneratedAutomation: AutomationRule(
-                id: UUID(),
+                id: UUID().uuidString,
                 name: "Turn off Lights",
                 condition: "No motion detected",
                 action: "Lights Off",

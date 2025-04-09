@@ -1,32 +1,35 @@
 import SwiftUI
 
 struct AddAutomationView: View {
+    @Binding var automationRules: [AutomationRule] // Add this
+    @EnvironmentObject var logManager: EventLogManager // Add this
+
+
     @Environment(\.dismiss) var dismiss
-    
+
     var inputDevices: [Device]      // e.g. temperature, motion, humidity
     var outputDevices: [Device]     // e.g. lights, fan, servo, etc.
-    
+
     @State private var ruleName: String = ""
-    
-    // INPUT states
-    @State private var selectedSensor: Device?
+
+    // Use only the ID states for selection.
+    @State private var selectedSensorID: String? = nil
     @State private var comparison: String = "Greater Than"
     @State private var thresholdValue: Double = 70
-    
-    // OUTPUT states
-    @State private var selectedOutput: Device?
+
+    @State private var selectedOutputID: String? = nil
     @State private var outputAction: String = "On"  // "On" or "Off"
-    
+
     @State private var useTriggerTime: Bool = true
     @State private var triggerTime: Date = Date()
     @State private var activeDays: [Bool] = Array(repeating: false, count: 7)
-    
+
     let dayAbbreviations = ["M", "Tu", "W", "Th", "F", "Sa", "Su"]
     let comparisonOptions = ["Greater Than", "Less Than"]
     let onOffOptions      = ["On", "Off"]
-    
+
     var onSave: (AutomationRule) -> Void
-    
+
     var body: some View {
         NavigationView {
             Form {
@@ -36,7 +39,7 @@ struct AddAutomationView: View {
                 conditionSection
                 // Output device + On/Off
                 outputSection
-                // optional time scheduling
+                // Optional time scheduling
                 triggerTimeSection
                 activeDaysSection
             }
@@ -44,17 +47,17 @@ struct AddAutomationView: View {
             .toolbar { addCancelToolbar }
         }
     }
-    
+
     // MARK: - Subviews
     private var automationDetailsSection: some View {
         Section(header: Text("Automation Details")) {
             TextField("Rule Name", text: $ruleName)
             
             if !inputDevices.isEmpty {
-                Picker("Input Sensor", selection: $selectedSensor) {
-                    Text("None").tag(Device?.none)
+                Picker("Input Sensor", selection: $selectedSensorID) {
+                    Text("None").tag(String?.none)
                     ForEach(inputDevices) { device in
-                        Text(device.name).tag(Optional(device))
+                        Text(device.name).tag(Optional(device.id.uuidString))
                     }
                 }
             }
@@ -63,7 +66,7 @@ struct AddAutomationView: View {
     
     private var conditionSection: some View {
         Group {
-            if let sensor = selectedSensor {
+            if let sensor = inputDevices.first(where: { $0.id.uuidString == selectedSensorID }) {
                 if sensor.deviceType == .temperature || sensor.deviceType == .humidity {
                     Section(header: Text("Condition")) {
                         Picker("Comparison", selection: $comparison) {
@@ -74,8 +77,7 @@ struct AddAutomationView: View {
                                step: 1)
                         Text("Threshold: \(Int(thresholdValue))\(sensor.deviceType == .temperature ? "°F" : "%")")
                     }
-                }
-                else if sensor.deviceType == .motion {
+                } else if sensor.deviceType == .motion {
                     Section(header: Text("Condition")) {
                         Text("Motion Detected")
                     }
@@ -87,10 +89,10 @@ struct AddAutomationView: View {
     private var outputSection: some View {
         Section(header: Text("Output Device & Action")) {
             if !outputDevices.isEmpty {
-                Picker("Output Device", selection: $selectedOutput) {
-                    Text("None").tag(Device?.none)
+                Picker("Output Device", selection: $selectedOutputID) {
+                    Text("None").tag(String?.none)
                     ForEach(outputDevices) { device in
-                        Text(device.name).tag(Optional(device))
+                        Text(device.name).tag(Optional(device.id.uuidString))
                     }
                 }
             }
@@ -152,9 +154,13 @@ struct AddAutomationView: View {
             .map { $0.element }
             .joined(separator: ",")
         
+        // Look up the selected sensor and output devices using the IDs:
+        let sensor = inputDevices.first(where: { $0.id.uuidString == selectedSensorID })
+        let outDevice = outputDevices.first(where: { $0.id.uuidString == selectedOutputID })
+        
         // Build condition string
         var condition = ""
-        if let sensor = selectedSensor {
+        if let sensor = sensor {
             switch sensor.deviceType {
             case .temperature, .humidity:
                 condition = "\(comparison) \(Int(thresholdValue))"
@@ -167,68 +173,81 @@ struct AddAutomationView: View {
         
         // Build output action string (e.g. "Kitchen Lights On", "Fan Off", etc.)
         var finalAction = "Execute"
-        if let outDev = selectedOutput {
-            finalAction = "\(outDev.name) \(outputAction)"
+        if let outDevice = outDevice {
+            finalAction = "\(outDevice.name) \(outputAction)"
         }
         
-        // Determine whether this is a condition‐only rule
+        // Determine whether this is a condition-based rule
         let isConditionBased: Bool = {
-            if let sensor = selectedSensor {
-                // For our purposes, temperature, humidity and motion rules are condition-based
+            if let sensor = sensor {
                 return sensor.deviceType == .temperature ||
-                sensor.deviceType == .humidity ||
-                sensor.deviceType == .motion
+                    sensor.deviceType == .humidity ||
+                    sensor.deviceType == .motion
             }
             return false
         }()
         
-        // For condition-based rules, we force triggerTime to 0.
-        // For time-based rules, we calculate the delay (in milliseconds) from now.
+        // For condition-based rules, force triggerTime to 0.
         let triggerTimeValue: TimeInterval = isConditionBased ? 0 : max(triggerTime.timeIntervalSinceNow * 1000, 0)
-        
-        // For condition-based rules, we always want them active.
         let newTriggerEnabled: Bool = isConditionBased ? true : useTriggerTime
         
         let newRule = AutomationRule(
-            id: UUID(),
+            id: UUID().uuidString,         // <--- generate a String
             name: ruleName,
             condition: condition,
             action: finalAction,
             activeDays: activeDayString,
             triggerEnabled: newTriggerEnabled,
             triggerTime: Date(timeIntervalSince1970: triggerTimeValue),
-            inputDeviceID: selectedSensor?.id,
-            outputDeviceID: selectedOutput?.id
+                    // Save them as strings:
+            inputDeviceID: sensor?.id.uuidString,
+            outputDeviceID: outDevice?.id.uuidString
         )
         
-        // Call your onSave closure to update local state
-        onSave(newRule)
+        // Debug: Log new rule creation before sending
+        print("DEBUG: New rule created: \(newRule)")
         
-        // Send it to the firmware
-        NetworkManager.sendAutomationRule(rule: newRule) { success in
-            if success {
-                // Optionally fetch updated rules from the ESP32
-                NetworkManager.fetchAutomationRules { fetchedRules in
-                    DispatchQueue.main.async {
-                        // Update your local state if needed.
+        onSave(newRule)
+        // Remove onSave(newRule) from here if you don't want duplicates.
+        // Instead, use the network call as the single source of truth.
+        NetworkManager.sendAutomationRule(rule: newRule, completion: { success in
+            DispatchQueue.main.async {
+                if success {
+                    logManager.addLog("Added automation: \(newRule.name)")
+                    // Delay fetch so firmware has time to update its list.
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                        NetworkManager.fetchAutomationRules { fetchedRules in
+                            if let fetched = fetchedRules {
+                                DispatchQueue.main.async {
+                                    self.automationRules = mergeAutomationRules(local: self.automationRules, fetched: fetched)
+                                    print("DEBUG: After merge, automation rules: \(self.automationRules)")
+                                }
+                            } else {
+                                print("DEBUG: Failed to fetch updated rules")
+                            }
+                        }
                     }
+                } else {
+                    logManager.addLog("Failed to add automation: \(newRule.name)")
                 }
+                dismiss()
             }
-            dismiss()
-        }
+        })
     }
 }
-    
+
 struct AddAutomationView_Previews: PreviewProvider {
     static var previews: some View {
         let sampleSensor = Device.create(name: "Temperature Sensor", status: "Off", deviceType: .temperature, port: "GPIO4")
         let sampleOutput = Device.create(name: "Kitchen Lights", status: "Off", deviceType: .light, port: "GPIO32")
         
         return AddAutomationView(
+            automationRules: .constant([]),  // New binding parameter
             inputDevices: [sampleSensor],
-            outputDevices: [sampleOutput]
-        ) { rule in
-            print("New rule: \(rule)")
-        }
+            outputDevices: [sampleOutput],
+            onSave: { rule in
+                print("New rule: \(rule)")
+            }
+        )
     }
 }
