@@ -233,7 +233,7 @@ struct EditAutomationView: View {
             DispatchQueue.main.async {
                 if success {
                     NetworkManager.fetchAutomationRules { fetchedRules in
-                        if let fetched = fetchedRules {
+                        if fetchedRules != nil {
                             DispatchQueue.main.async {
                                 // Merge them locally if you wish
                                 // Or just replace automation rules

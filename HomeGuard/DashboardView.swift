@@ -35,7 +35,7 @@ struct DashboardView: View {
         triggerTime: Date()
     )
     
-    @State private var sensorTimer = Timer.publish(every: 2, on: .main, in: .common).autoconnect()
+    @State private var sensorTimer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
     
     @State private var aiGeneratedAutomation: AutomationRule? = nil
     @State private var showAIProcessing = false
@@ -291,9 +291,9 @@ struct DashboardView: View {
     
     private func processVoiceCommand(notification: Notification) {
         guard let userInfo = notification.userInfo,
-              let command = userInfo["command"] as? String,
+              let _ = userInfo["command"] as? String,
               let fullText = userInfo["fullText"] as? String else { return }
-        let lowerText = fullText.lowercased()
+        _ = fullText.lowercased()
         // Example: you can parse or do nothing here, since SpeechManager also does it
     }
     

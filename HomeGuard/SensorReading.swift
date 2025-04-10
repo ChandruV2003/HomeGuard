@@ -1,7 +1,6 @@
 import SwiftUI
 import Charts
 
-/// A single sensor reading, with timestamp, temperature (Celsius), and humidity (%).
 struct SensorReading: Identifiable {
     let id = UUID()
     let timestamp: Date
@@ -9,12 +8,9 @@ struct SensorReading: Identifiable {
     let humidity: Double      // Percentage
 }
 
-/// The chart view that fetches real DHT data from the firmware’s /sensor endpoint.
 struct DHT11ChartView: View {
-    /// The array of historical readings. We update this with real data.
     @State private var readings: [SensorReading] = []
     
-    /// A timer to poll the firmware. We'll invalidate it when leaving the view.
     @State private var pollTimer: Timer? = nil
     
     var body: some View {
@@ -31,7 +27,7 @@ struct DHT11ChartView: View {
                             .font(.headline)
                         Chart(readings) { reading in
                             LineMark(
-                                x: .value("Time", reading.timestamp),
+                                x: .value("Time", reading.timestamp), // now using a simulated Date
                                 y: .value("Temperature", celsiusToFahrenheit(reading.temperatureC))
                             )
                             .interpolationMethod(.monotone)
@@ -45,7 +41,7 @@ struct DHT11ChartView: View {
                             .font(.headline)
                         Chart(readings) { reading in
                             LineMark(
-                                x: .value("Time", reading.timestamp),
+                                x: .value("Time", reading.timestamp), // using the simulated Date
                                 y: .value("Humidity", reading.humidity)
                             )
                             .interpolationMethod(.monotone)
@@ -79,14 +75,16 @@ struct DHT11ChartView: View {
         pollTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { _ in
             NetworkManager.fetchSensorData { jsonDict in
                 guard let json = jsonDict else { return }
-                // Attempt to parse the temperature/humidity from the JSON
+                // Parse the temperature and humidity from the JSON
                 let tempC = parseTemperature(from: json)
                 let hum   = parseHumidity(from: json)
                 
                 // If valid, append to readings array
                 if !tempC.isNaN && !hum.isNaN {
+                    // Convert simulation time to a Date based on 2023-01-01
+                    let simT = json["simTime"] as? Double ?? 0
                     let newReading = SensorReading(
-                        timestamp: Date(),
+                        timestamp: scaledTimeToDate(simT),
                         temperatureC: tempC,
                         humidity: hum
                     )
@@ -106,8 +104,7 @@ struct DHT11ChartView: View {
         // The firmware typically returns "temperature" as a string or number
         if let tempStr = json["temperature"] as? String, let tempVal = Double(tempStr) {
             return tempVal
-        }
-        else if let tempNum = json["temperature"] as? Double {
+        } else if let tempNum = json["temperature"] as? Double {
             return tempNum
         }
         return Double.nan
@@ -116,8 +113,7 @@ struct DHT11ChartView: View {
     private func parseHumidity(from json: [String: Any]) -> Double {
         if let humStr = json["humidity"] as? String, let humVal = Double(humStr) {
             return humVal
-        }
-        else if let humNum = json["humidity"] as? Double {
+        } else if let humNum = json["humidity"] as? Double {
             return humNum
         }
         return Double.nan
@@ -126,6 +122,14 @@ struct DHT11ChartView: View {
     // MARK: - Celsius to Fahrenheit
     private func celsiusToFahrenheit(_ celsius: Double) -> Double {
         return celsius * 9.0 / 5.0 + 32.0
+    }
+    
+    // MARK: - Convert Simulation Time to Date
+    /// Converts simulation time (in milliseconds) to a "fake" Date,
+    /// offset from January 1, 2023 (00:00:00 GMT).
+    private func scaledTimeToDate(_ scaledMillis: Double) -> Date {
+        let baseEpoch: TimeInterval = 1672531200 // 2023-01-01 00:00:00 GMT
+        return Date(timeIntervalSince1970: baseEpoch + scaledMillis / 1000.0)
     }
 }
 

@@ -11,9 +11,9 @@ struct LCDSettingsView: View {
                 Section(header: Text("LCD Message")) {
                     TextField("Enter message", text: $message)
                 }
-                Section(header: Text("Display Duration (seconds)")) {
+                Section(header: Text("Display Duration (hours)")) {
                     Slider(value: $duration, in: 1...20, step: 1)
-                    Text("\(Int(duration)) seconds")
+                    Text("\(Int(duration)) hours")
                 }
                 Button("Update LCD") {
                     NetworkManager.sendLCDMessage(message: message, duration: Int(duration)) { success in
