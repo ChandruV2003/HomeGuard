@@ -5,7 +5,9 @@ struct AutomationRowView: View {
     var onToggle: (Bool) -> Void  // Callback for enabling/disabling the rule
     var onEdit: () -> Void        // Callback for editing
     var onDelete: () -> Void      // Callback for deleting
-    @State private var isActive: Bool = true
+    
+    // We'll keep the local toggle state in sync with the actual `rule.triggerEnabled`.
+    @State private var isActive: Bool
     
     // Abbreviated day labels
     private let dayLabels: [String] = ["M", "Tu", "W", "Th", "F", "Sa", "Su"]
@@ -13,6 +15,20 @@ struct AutomationRowView: View {
     // Parse activeDays (e.g., "M,Tu,W,Th,F")
     private var activeDays: [String] {
         rule.activeDays.components(separatedBy: ",").map { $0.trimmingCharacters(in: .whitespaces) }
+    }
+    
+    // NEW: add an init to set isActive = rule.triggerEnabled:
+    init(rule: AutomationRule,
+         onToggle: @escaping (Bool) -> Void,
+         onEdit: @escaping () -> Void,
+         onDelete: @escaping () -> Void)
+    {
+        self.rule = rule
+        self.onToggle = onToggle
+        self.onEdit = onEdit
+        self.onDelete = onDelete
+        // Initialize local state from the actual rule
+        _isActive = State(initialValue: rule.triggerEnabled)
     }
     
     var body: some View {
@@ -44,7 +60,7 @@ struct AutomationRowView: View {
                 }
             }
             Spacer()
-            // Use the unified power button style for automation rule toggle
+            // Unified power button style for rule toggle
             AutomationPowerButton(isActive: $isActive) {
                 isActive.toggle()
                 onToggle(isActive)
@@ -62,6 +78,7 @@ struct AutomationRowView: View {
         }
     }
 }
+
 
 struct AutomationRowView_Previews: PreviewProvider {
     static var previews: some View {

@@ -143,10 +143,6 @@ struct AddAutomationView: View {
     
     // MARK: - Methods
     private func saveAutomation() {
-        // The first half just builds up the new AutomationRule object
-        // with placeholders for triggerTime = 0.  Then, asynchronously,
-        // we fetch the board's current simTime and adjust it.
-
         let activeDayString = dayAbbreviations.enumerated()
             .filter { activeDays[$0.offset] }
             .map { $0.element }
@@ -172,7 +168,7 @@ struct AddAutomationView: View {
             finalAction = "\(outDevice.name) \(outputAction)"
         }
 
-        // We do want to treat time-based vs condition-based differently:
+        // Distinguish condition-based vs time-based
         let isConditionBased: Bool = {
             if let s = sensor {
                 return s.deviceType == .temperature
@@ -182,41 +178,34 @@ struct AddAutomationView: View {
             return false
         }()
         
-        // Build the skeleton rule
+        // Build the rule
         var newRule = AutomationRule(
             id: UUID().uuidString,
             name: ruleName,
             condition: condition,
             action: finalAction,
             activeDays: activeDayString,
-            triggerEnabled: !isConditionBased && useTriggerTime,
+            // CHANGED HERE: Condition-based => always enabled; time-based => user toggle
+            triggerEnabled: (isConditionBased || useTriggerTime),
             triggerTime: Date(timeIntervalSince1970: 0),
             inputDeviceID: sensor?.id.uuidString,
             outputDeviceID: outDevice?.id.uuidString
         )
 
-        // If condition-based, the firmware will ignore the time factor; set 0
-        if isConditionBased {
-            newRule.triggerTime = Date(timeIntervalSince1970: 0)
-        }
-        
-        // Next: asynchronously fetch /sensor to get the board's simTime
+        // If condition-based, firmware ignores time factor => keep 0
+        // Otherwise convert user-chosen time to scaled firmware time
         NetworkManager.fetchSensorData { dict in
             guard let dict = dict, let boardNow = dict["simTime"] as? Double else {
-                // Could not fetch, fallback => do normal call with triggerTime = 0
+                // Fallback => just send triggerTime=0
                 sendRuleToBoard(rule: newRule)
                 return
             }
-            // If it IS time-based, we want to convert from real seconds to scaled
             if !isConditionBased && useTriggerTime {
-                let realDiffSeconds = triggerTime.timeIntervalSinceNow // can be negative if time is in the past
-                // Each real second => 1000 ms => multiplied by TIME_ACCEL_FACTOR
+                let realDiffSeconds = triggerTime.timeIntervalSinceNow // can be negative if time is in past
                 let scaledDiff: Double = realDiffSeconds * 1000.0 * Config.timeAcceleration
                 let finalScaled = max(boardNow + scaledDiff, 0)
-                
                 newRule.triggerTime = Date(timeIntervalSince1970: finalScaled)
             } else {
-                // For condition-based or disabled time
                 newRule.triggerTime = Date(timeIntervalSince1970: 0)
             }
             sendRuleToBoard(rule: newRule)
@@ -227,7 +216,6 @@ struct AddAutomationView: View {
         NetworkManager.sendAutomationRule(rule: rule) { success in
             DispatchQueue.main.async {
                 if success {
-                    // Now fetch updated rules to refresh the local array
                     NetworkManager.fetchAutomationRules { fetchedRules in
                         if let fetched = fetchedRules {
                             DispatchQueue.main.async {
@@ -241,6 +229,7 @@ struct AddAutomationView: View {
         }
     }
 }
+
 
 
 struct AddAutomationView_Previews: PreviewProvider {

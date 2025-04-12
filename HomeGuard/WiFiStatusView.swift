@@ -29,3 +29,4 @@ struct WiFiStatusView_Previews: PreviewProvider {
         .previewLayout(.sizeThatFits)
     }
 }
+

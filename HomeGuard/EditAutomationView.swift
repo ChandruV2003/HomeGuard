@@ -56,9 +56,12 @@ struct EditAutomationView: View {
         if let last = actionComponents.last {
             self._outputAction = State(initialValue: String(last))
         }
-        self._useTriggerTime = State(initialValue: rule.triggerEnabled)
+        // Instead of forcing "condition-based => false", respect the actual rule's existing triggerEnabled
+        // plus the user’s set time (if any).
+        self._useTriggerTime = State(initialValue: rule.triggerEnabled && rule.triggerTime.timeIntervalSince1970 != 0)
         self._triggerTime = State(initialValue: rule.triggerTime)
-        
+
+        // parse activeDays
         let daysFromRule = rule.activeDays.split(separator: ",").map { String($0) }
         var actives = [Bool](repeating: false, count: 7)
         for (index, dayAbbrev) in dayAbbreviations.enumerated() {
@@ -72,7 +75,6 @@ struct EditAutomationView: View {
     var body: some View {
         NavigationView {
             Form {
-                // same sections
                 Section(header: Text("Automation Details")) {
                     TextField("Rule Name", text: $rule.name)
                     if !inputDevices.isEmpty {
@@ -157,7 +159,6 @@ struct EditAutomationView: View {
         }
     }
 
-    // MARK: - Save
     private func saveAutomation() {
         let activeDayString = dayAbbreviations.enumerated()
             .filter { activeDays[$0.offset] }
@@ -193,26 +194,20 @@ struct EditAutomationView: View {
             return false
         }()
 
-        // Rebuild the rule in memory
         rule.condition = condition
         rule.action = finalAction
         rule.activeDays = activeDayString
-        rule.triggerEnabled = !isConditionBased && useTriggerTime
+
+        // CRITICAL CHANGE: keep it enabled if condition-based OR if user toggled time
+        rule.triggerEnabled = (isConditionBased || useTriggerTime)
         rule.inputDeviceID = selectedSensorID
         rule.outputDeviceID = selectedOutputID
 
-        // Temporarily set to 0, then adjust after we fetch the board's time
+        // Temporarily set triggerTime=0 (will fix below)
         rule.triggerTime = Date(timeIntervalSince1970: 0)
 
-        // If it's condition-based, firmware ignores time
-        if isConditionBased {
-            rule.triggerTime = Date(timeIntervalSince1970: 0)
-        }
-
-        // Fetch the board’s simTime first
         NetworkManager.fetchSensorData { dict in
             guard let dict = dict, let boardNow = dict["simTime"] as? Double else {
-                // fallback
                 sendRuleToFirmware(rule)
                 return
             }
@@ -235,14 +230,11 @@ struct EditAutomationView: View {
                     NetworkManager.fetchAutomationRules { fetchedRules in
                         if fetchedRules != nil {
                             DispatchQueue.main.async {
-                                // Merge them locally if you wish
-                                // Or just replace automation rules
                                 self.onSave(updatedRule)
                             }
                         }
                     }
                 } else {
-                    // Even if not successful, do local onSave
                     self.onSave(updatedRule)
                 }
                 dismiss()
