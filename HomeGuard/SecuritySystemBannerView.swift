@@ -3,41 +3,38 @@ import SwiftUI
 struct SecuritySystemBannerView: View {
     var rule: AutomationRule
     var onSelect: () -> Void
-
+    
     var body: some View {
-        Button(action: onSelect) {
-            HStack {
-                Image(systemName: "lock.shield")
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 40, height: 40)
-                    .foregroundColor(.red)
-                VStack(alignment: .leading) {
-                    Text(rule.name)
-                        .font(.headline)
-                    Text(rule.action)
-                        .font(.subheadline)
-                        .foregroundColor(.green)
-                }
-                Spacer()
+        // REMOVED the Button(...) wrapper so that tapping the banner does nothing
+        HStack {
+            Image(systemName: "lock.shield")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 40, height: 40)
+                .foregroundColor(.red)
+            
+            VStack(alignment: .leading) {
+                Text(rule.name)
+                    .font(.headline)
+                Text(rule.action)
+                    .font(.subheadline)
+                    .foregroundColor(.green)
             }
-            .padding()
-            .background(
-                // Use systemBackground to match other banners/cards.
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(Color(UIColor.systemBackground))
-            )
-            .overlay(
-                // Red border to emphasize the security system.
-                RoundedRectangle(cornerRadius: 12)
-                    .stroke(Color.red, lineWidth: 2)
-            )
-            .padding(.vertical, 4)
+            
+            Spacer()
         }
-        .buttonStyle(PlainButtonStyle())
+        .padding()
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color(UIColor.systemBackground))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(Color.red, lineWidth: 2)
+        )
+        .padding(.vertical, 4)
+        // The context menu is still available, but the banner itself is not tappable
         .contextMenu {
-            // If you want to allow editing from a context menu, keep this.
-            // Otherwise, remove it if you prefer no context menu.
             Button(action: onSelect) {
                 Label("Edit Security Settings", systemImage: "pencil")
             }

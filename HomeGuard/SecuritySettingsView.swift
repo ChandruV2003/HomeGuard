@@ -3,6 +3,7 @@ import SwiftUI
 struct SecuritySettingsView: View {
     @Binding var rule: AutomationRule
     
+    // Existing security fields
     @State private var goodCard: String = "044A565A7F7080"
     @State private var badCard: String = "046A2B4AD55E80"
     @State private var grantedMsg: String = "Access Granted"
@@ -11,9 +12,20 @@ struct SecuritySettingsView: View {
     
     @State private var showConfirmation: Bool = false
     
+    // NEW: to manage lock screen password and lock timeout
+    @AppStorage("lockTimeout") var lockTimeout: Double = 300
+    @AppStorage("lockPassword") var savedPassword: String = "1234"
+    
+    // For updating the password
+    @State private var oldPassword: String = ""
+    @State private var newPassword: String = ""
+    @State private var verifyNewPassword: String = ""
+    @State private var passwordUpdateError: String = ""
+    
     var body: some View {
         NavigationView {
-            Form(content: {
+            Form {
+                // --- Existing Security System Settings ---
                 Section(header: Text("Card UIDs")) {
                     TextField("Good Card UID", text: $goodCard)
                     TextField("Bad Card UID", text: $badCard)
@@ -42,16 +54,36 @@ struct SecuritySettingsView: View {
                         }
                     }
                 }
-            })
+                
+                // --- NEW: App Lock Settings ---
+                Section(header: Text("App Lock Settings")) {
+                    SecureField("Current Password", text: $oldPassword)
+                    SecureField("New Password", text: $newPassword)
+                    SecureField("Confirm New Password", text: $verifyNewPassword)
+                    
+                    if !passwordUpdateError.isEmpty {
+                        Text(passwordUpdateError)
+                            .foregroundColor(.red)
+                    }
+                    
+                    Button("Update Lock Password") {
+                        updateAppLockPassword()
+                    }
+                    
+                    // Lock Timeout slider
+                    Text("Lock Timeout: \(Int(lockTimeout)) seconds")
+                    Slider(value: $lockTimeout, in: 30...1800, step: 30)
+                }
+            }
             .navigationBarTitle(Text("Security Settings"), displayMode: .inline)
             .onAppear(perform: fetchCurrentSecurity)
-            .alert(isPresented: $showConfirmation, content: {
+            .alert(isPresented: $showConfirmation) {
                 Alert(
                     title: Text("Success"),
                     message: Text("Security settings updated"),
                     dismissButton: .default(Text("OK"))
                 )
-            })
+            }
         }
     }
     
@@ -82,12 +114,42 @@ struct SecuritySettingsView: View {
             }
         }.resume()
     }
+    
+    // NEW: handle lock password update
+    private func updateAppLockPassword() {
+        // 1) Validate old password
+        if oldPassword != savedPassword {
+            passwordUpdateError = "Incorrect current password."
+            return
+        }
+        
+        // 2) Check new passwords match
+        if newPassword != verifyNewPassword {
+            passwordUpdateError = "New passwords do not match."
+            return
+        }
+        
+        // 3) Check not empty
+        if newPassword.isEmpty {
+            passwordUpdateError = "New password cannot be empty."
+            return
+        }
+        
+        // 4) Success: store the new password
+        savedPassword = newPassword
+        passwordUpdateError = ""
+        
+        // Optionally clear the text fields
+        oldPassword = ""
+        newPassword = ""
+        verifyNewPassword = ""
+    }
 }
 
 struct SecuritySettingsView_Previews: PreviewProvider {
     @State static var rule = AutomationRule(
-        id: UUID().uuidString,  // Use string-based ID
-        name: "Security Automation",
+        id: UUID().uuidString,
+        name: "Security System",
         condition: "RFID Allowed",
         action: "Active",
         activeDays: "M,Tu,W,Th,F,Sa,Su",

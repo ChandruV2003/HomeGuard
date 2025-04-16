@@ -13,6 +13,10 @@ struct DashboardView: View {
     @State private var deviceForEdit: Device? = nil
     @State private var showLog = false
     @State private var errorMessage: String = ""
+    
+    // NEW: store an error message specifically from AI decoding:
+    @State private var aiErrorMessage: String = ""
+    
     @State private var lastAISuggestionFetch = Date.distantPast
     
     @State private var selectedLCDDevice: Device? = nil
@@ -37,15 +41,19 @@ struct DashboardView: View {
     
     @State private var sensorTimer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
     
+    // The AI-generated automation (if successful).
     @State private var aiGeneratedAutomation: AutomationRule? = nil
+    
     @State private var showAIProcessing = false
-
+    
     // We'll store the board's simTime from the last fetch
     @State private var boardSimTime: Double = 0.0
     
     var body: some View {
         let mainContent = contentView
-            .toolbar { toolbarContent }
+            .toolbar {
+                toolbarContent
+            }
             .onAppear {
                 speechManager.logManager = logManager
                 
@@ -66,10 +74,15 @@ struct DashboardView: View {
                     }
                 }
                 
-                ChatGPTAPI.fetchAutomation(prompt: "Suggest a new automation rule for my home") { suggestedRule in
-                    if let rule = suggestedRule {
-                        DispatchQueue.main.async {
+                // --------------- AI Suggestion ---------------
+                // Updated to handle (rule, error) from ChatGPTAPI
+                ChatGPTAPI.fetchAutomation(prompt: "Suggest a new automation rule for my home") { suggestedRule, errorMsg in
+                    DispatchQueue.main.async {
+                        if let rule = suggestedRule {
                             self.aiGeneratedAutomation = rule
+                        } else if let err = errorMsg {
+                            // show the error on screen
+                            self.aiErrorMessage = err
                         }
                     }
                 }
@@ -81,31 +94,32 @@ struct DashboardView: View {
                     DispatchQueue.main.async {
                         // Update statuses
                         updateDeviceStatuses(with: sensorDict)
+                        
                         // Grab simTime for the UI clock
                         if let st = sensorDict["simTime"] as? Double {
                             boardSimTime = st
                         }
                     }
                 }
+                
                 // Also fetch logs from the firmware
                 logManager.fetchDeviceLogs { newLogs in
                     DispatchQueue.main.async {
-                        // Overwrite or append, your call.
-                        // If you want them all, do a merge.
-                        // Here, let's just replace with the new logs from the device:
                         logManager.logs = newLogs.reversed()
                     }
                 }
+                
                 // Optionally refresh automations each poll
                 NetworkManager.fetchAutomationRules { fetchedRules in
-                    if let fetched = fetchedRules {
-                        DispatchQueue.main.async {
-                            automationRules = mergeAutomationRules(local: automationRules, fetched: fetched)
-                        }
+                    // ✓ Safely unwrap before using
+                    guard let fetchedRules = fetchedRules else { return }
+                    DispatchQueue.main.async {
+                        automationRules = mergeAutomationRules(local: automationRules, fetched: fetchedRules)
                     }
                 }
             }
-
+        
+        // Present the view with sheets
         let withSheets = NavigationView {
             mainContent
         }
@@ -175,17 +189,18 @@ struct DashboardView: View {
         .onReceive(NotificationCenter.default.publisher(for: .voiceCommandReceived)) { notification in
             processVoiceCommand(notification: notification)
         }
-
+        
         return withSheets
     }
-
+    
+    // MARK: - Main Content
     private var contentView: some View {
         ScrollView {
             VStack(spacing: 16) {
                 // Example: add a clock label that matches firmware
                 HeaderView(title: "HomeGuard Dashboard")
                 
-                // Show the scaled time from the board
+                // Firmware Clock
                 Text("Firmware Clock: \(scaledMillisToString(boardSimTime))")
                     .font(.caption)
                     .foregroundColor(.gray)
@@ -198,13 +213,20 @@ struct DashboardView: View {
                 }
                 .padding(.horizontal)
                 
+                // Show the AI decoding error if any
+                if !aiErrorMessage.isEmpty {
+                    Text("AI Error: \(aiErrorMessage)")
+                        .foregroundColor(.red)
+                        .padding()
+                }
+                
                 AutomationsAreaView(
                     automationRules: automationRules.filter { $0.name != "Security System" },
                     aiGeneratedAutomation: aiGeneratedAutomation,
                     onAdd: { showAddAutomation = true },
                     onAcceptAISuggestion: {
                         if let aiAutomation = aiGeneratedAutomation {
-                            // firmware logs it
+                            // Firmware logs it
                             automationRules.append(aiAutomation)
                             aiGeneratedAutomation = nil
                             NetworkManager.fetchAutomationRules { fetchedRules in
@@ -224,7 +246,7 @@ struct DashboardView: View {
                     },
                     addEnabled: !devices.isEmpty
                 )
-
+                
                 DevicesAreaView(
                     devices: $devices,
                     onSelect: { device in
@@ -243,13 +265,14 @@ struct DashboardView: View {
                     isReordering: isReordering
                 )
                 .padding(.horizontal)
-
+                
                 VoiceControlButton(speechManager: speechManager)
             }
             .padding(.vertical)
         }
     }
     
+    // MARK: - Toolbar
     private var toolbarContent: some ToolbarContent {
         Group {
             ToolbarItem(placement: .navigationBarTrailing) {
@@ -269,6 +292,7 @@ struct DashboardView: View {
         }
     }
     
+    // MARK: - Helpers
     private var filteredSensors: [Device] {
         devices.filter { d in
             d.deviceType == .sensor ||
@@ -294,7 +318,7 @@ struct DashboardView: View {
               let _ = userInfo["command"] as? String,
               let fullText = userInfo["fullText"] as? String else { return }
         _ = fullText.lowercased()
-        // Example: you can parse or do nothing here, since SpeechManager also does it
+        // Example: parse or do nothing, since SpeechManager also does it.
     }
     
     private func handleAutomationAction(rule: AutomationRule, action: AutomationContextAction) {
@@ -358,7 +382,7 @@ struct DashboardView: View {
         } else {
             temperatureStr = "NaN"
         }
-
+        
         let humidityStr: String
         if let humNum = sensorDict["humidity"] as? Double {
             humidityStr = String(format: "%.1f", humNum)
@@ -367,18 +391,18 @@ struct DashboardView: View {
         } else {
             humidityStr = "NaN"
         }
-
+        
         var fahrenheitStr = "NaN"
         if let celsius = Double(temperatureStr) {
             let fahrenheit = celsius * 9.0 / 5.0 + 32.0
             fahrenheitStr = String(format: "%.0f", fahrenheit)
         }
+        
         let temperatureCombined = fahrenheitStr + "°F, " + humidityStr + "%"
-
         let pir = sensorDict["pir"] as? String ?? "No motion"
         let rfid = sensorDict["rfid"] as? String ?? "Active"
         let lcd = sensorDict["lcd"] as? String ?? "Ready"
-
+        
         for i in devices.indices {
             switch devices[i].deviceType {
             case .temperature:
@@ -395,7 +419,7 @@ struct DashboardView: View {
                 break
             }
         }
-
+        
         if let strip1 = sensorDict["strip1Color"] as? String {
             if let idx = devices.firstIndex(where: { $0.port == "GPIO32" }) {
                 devices[idx].isOn = (strip1 != "000000")
@@ -426,7 +450,6 @@ struct DashboardView: View {
                 devices[idx].status = ledVal ? "On" : "Off"
             }
         }
-
         if let fanState = sensorDict["fanOn"] as? Bool {
             updateDeviceStatus(port: "GPIO26", isOn: fanState)
         }
@@ -453,7 +476,6 @@ struct DashboardView: View {
             devices[index].status = isOn ? "On" : "Off"
         }
     }
-
     private func updateServoStatus(port: String, angle: Int) {
         if let index = devices.firstIndex(where: { $0.port == port }) {
             let isOpen = (angle > 5)
@@ -476,11 +498,12 @@ struct DashboardView: View {
             errorMessage = message
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
-            withAnimation { errorMessage = "" }
+            withAnimation {
+                errorMessage = ""
+            }
         }
     }
 }
-
 
 struct DashboardView_Previews: PreviewProvider {
     static var previews: some View {

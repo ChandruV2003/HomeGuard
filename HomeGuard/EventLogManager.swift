@@ -27,10 +27,15 @@ class EventLogManager: ObservableObject {
         """
 
 
-        ChatGPTAPI.fetchAutomation(prompt: prompt) { rule in
+        ChatGPTAPI.fetchAutomation(prompt: prompt) { rule, errorMsg in
             DispatchQueue.main.async {
                 if let automation = rule {
                     self.suggestedAutomation = automation
+                } else if let error = errorMsg {
+                    // Handle or log the error as needed, e.g.:
+                    print("Failed to fetch AI automation: \(error)")
+                    // Optionally set suggestedAutomation to nil if you want to clear any old data:
+                    self.suggestedAutomation = nil
                 }
             }
         }
