@@ -42,7 +42,7 @@ struct NetworkManager {
 
     /// Prepends `token` + rolling `code` to every call
     @inline(__always)
-    private static func authItems() -> [URLQueryItem] {
+    static func authItems() -> [URLQueryItem] {
         [
             URLQueryItem(name: "token", value: secretToken),
             URLQueryItem(name: "code",  value: rollingCode())

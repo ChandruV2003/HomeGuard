@@ -2,15 +2,14 @@ import Foundation
 
 struct SyncManager {
     // Checks connectivity by calling the /ping endpoint.
-    static func checkConnection(globalIP: String, completion: @escaping (Bool) -> Void) {
-        guard let url = URL(string: "http://\(globalIP)/ping") else {
-            completion(false)
-            return
-        }
-        URLSession.shared.dataTask(with: url) { _, response, error in
+    static func checkConnection(globalIP: String,
+                                completion: @escaping (Bool) -> Void) {
+        var comp = URLComponents(string: "http://\(globalIP)/ping")!
+        comp.queryItems = NetworkManager.authItems()      // <– add this
+        URLSession.shared.dataTask(with: comp.url!) { _, resp, err in
             DispatchQueue.main.async {
-                let isConnected = (response as? HTTPURLResponse)?.statusCode == 200 && error == nil
-                completion(isConnected)
+                let ok = (resp as? HTTPURLResponse)?.statusCode == 200 && err == nil
+                completion(ok)
             }
         }.resume()
     }

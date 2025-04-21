@@ -236,20 +236,36 @@ struct DashboardView: View {
     private func periodicPoll() {
         syncConnectivity()
 
+        // 1) pull down sensor data as before…
         NetworkManager.fetchSensorData { dict in
             guard let dict = dict else { return }
             DispatchQueue.main.async {
                 updateDeviceStatuses(with: dict)
-                if let st = dict["simTime"] as? Double { boardSimTime = st }
+                if let st = dict["simTime"] as? Double {
+                    boardSimTime = st
+                }
             }
         }
 
+        // 2) fetch your logs *with* auth…
         logManager.fetchDeviceLogs { logs in
-            DispatchQueue.main.async { logManager.logs = logs.reversed() }
+            DispatchQueue.main.async {
+                logManager.logs = logs.reversed()
+
+                // 3) **then** re‑run your AI suggestion against the new logs + device lists:
+                let sensors = filteredSensors
+                let outputs = filteredOutputs
+                logManager.analyzeLogsForAutomation(
+                    inputDevices: sensors,
+                    outputDevices: outputs
+                )
+            }
         }
 
+        // 4) and still refresh any existing automations…
         refreshAutomationRules()
     }
+
 
     private func refreshAutomationRules() {
         NetworkManager.fetchAutomationRules { fetched in
