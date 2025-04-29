@@ -249,4 +249,29 @@ struct NetworkManager {
         }
         .resume()
     }
+    
+    // ADD *JUST AFTER* the existing sendCommand(…) implementation
+    static func sendCommandWithRetry(
+        port: String,
+        action: String,
+        extraParams: [String:String] = [:],
+        retries: Int = 2,
+        completion: @escaping (_ state: String?, _ ok: Bool) -> Void
+    ) {
+        func attempt(_ remaining: Int) {
+            sendCommand(port: port, action: action, extraParams: extraParams) { state in
+                if let state = state {
+                    completion(state, true)                      // ✅ success on this try
+                } else if remaining > 0 {
+                    DispatchQueue.global().asyncAfter(deadline: .now() + 0.25) {
+                        attempt(remaining - 1)                   // 🔁 one more go
+                    }
+                } else {
+                    completion(nil, false)                       // ❌ gave up
+                }
+            }
+        }
+        attempt(retries)
+    }
+
 }

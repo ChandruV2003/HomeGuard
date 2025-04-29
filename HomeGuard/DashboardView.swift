@@ -133,6 +133,8 @@ struct DashboardView: View {
             .onReceive(NotificationCenter.default.publisher(for: .voiceCommandReceived)) {
                 processVoiceCommand(notification: $0)
             }
+            .onReceive(logManager.$suggestedAutomation) { aiGeneratedAutomation = $0 }   // 🆕
+
     }
 
     // ------------------------------------------------------------

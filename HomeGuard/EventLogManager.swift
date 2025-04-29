@@ -5,6 +5,9 @@ import Foundation
 class EventLogManager: ObservableObject {
     @Published var logs: [String] = []
     @Published var suggestedAutomation: AutomationRule?
+    
+    private var lastAIPromptDate: Date?          // 🆕 when we last asked GPT
+
 
     /// Called by your PowerButton & SpeechManager to record a UI‑driven event
     func addLog(_ log: String) {
@@ -23,24 +26,29 @@ class EventLogManager: ObservableObject {
     /// Fetches `/logs` **with** token+TOTP
     func fetchDeviceLogs(completion: @escaping ([String]) -> Void) {
         var comp = URLComponents(string: "http://\(Config.globalESPIP)/logs")!
-        comp.queryItems = NetworkManager.authItems()
+        comp.queryItems = NetworkManager.authItems()   // ← token + rolling code
         URLSession.shared.dataTask(with: comp.url!) { data, _, _ in
             guard
-                let data = data,
-                let arr = try? JSONSerialization.jsonObject(with: data) as? [String]
+              let data = data,
+              let arr  = try? JSONSerialization.jsonObject(with: data) as? [String]
             else {
-                completion([])
-                return
+              completion([])
+              return
             }
             completion(arr)
         }
         .resume()
     }
 
+
     /// Builds a prompt with both logs + the current device lists,
     /// then asks GPT for exactly one JSON automation rule.
     func analyzeLogsForAutomation(inputDevices: [Device],
                                   outputDevices: [Device]) {
+        if let last = lastAIPromptDate,
+            Date().timeIntervalSince(last) < 300 { return }     // ⏱ skip
+        lastAIPromptDate = Date()
+        
         let logsText = logs.joined(separator: "\n")
 
         let sensorList = inputDevices

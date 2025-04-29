@@ -28,6 +28,12 @@
     <!-- Privacy usage descriptions -->
     <key>NSLocalNetworkUsageDescription</key>
     <string>This app needs to discover and communicate with devices on your local network.</string>
+    
+    <key>NSBonjourServices</key>
+    <array>
+        <!-- tell iOS we use plain HTTP on the LAN -->
+        <string>_http._tcp</string>
+    </array>
 
     <key>NSMicrophoneUsageDescription</key>
     <string>This app uses the microphone for voice commands or audio recording.</string>
