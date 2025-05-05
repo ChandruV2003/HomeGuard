@@ -5,9 +5,9 @@ struct AutomationPowerButton: View {
     var onToggle: () -> Void
     @Environment(\.colorScheme) var colorScheme
     private let circleSize: CGFloat = 44
-    
+
     var body: some View {
-        Button(action: { onToggle() }) {
+        Button(action: onToggle) {
             ZStack {
                 Circle()
                     .fill(isActive ? Color.green : Color.gray)
@@ -17,9 +17,12 @@ struct AutomationPowerButton: View {
                     .foregroundColor(.white)
             }
         }
-        .buttonStyle(PlainButtonStyle())
+        .contentShape(Circle())                           // ← treat the full circle as tappable
+        .frame(width: circleSize, height: circleSize)     // ← reinforce the tappable area
+        .buttonStyle(PlainButtonStyle())                  // no cosmetic change
     }
 }
+
 
 struct AutomationPowerButton_Previews: PreviewProvider {
     @State static var state = true

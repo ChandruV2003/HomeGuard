@@ -128,12 +128,7 @@ struct DeviceCardView: View {
         } else {
             Text("Offline")
                 .font(.system(size: 20, weight: .semibold))
-                .foregroundColor(.red)
-                .padding(4)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 4)
-                        .stroke(Color.red, style: StrokeStyle(lineWidth: 2, dash: [5]))
-                )
+                .foregroundColor(.gray)
         }
     }
 }

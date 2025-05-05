@@ -4,32 +4,39 @@ struct PowerButton: View {
     @Binding var device: Device
     @ObservedObject var logManager: EventLogManager
     @Environment(\.colorScheme) var colorScheme
-
-    @State private var isBusy = false          // 🆕
+    @State private var isBusy = false
     private let circleSize: CGFloat = 44
 
     var body: some View {
-        Button(action: toggleDevice) {
-            ZStack {
-                Circle()
-                    .fill(fillColor)
-                    .frame(width: circleSize, height: circleSize)
+            Button(action: toggleDevice) {
+                ZStack {
+                    // ← only draw the circle when online
+                    Circle()
+                        .fill(device.isOnline
+                              ? (device.isOn ? .green : .gray)
+                              : .clear)
+                        .frame(width: circleSize, height: circleSize)
 
-                if isBusy {                     // spinning ring during network I/O
-                    ProgressView()
-                        .progressViewStyle(.circular)
-                        .scaleEffect(0.8)
-                        .tint(.white)
-                } else {
-                    Image(systemName: "power")
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundColor(iconColor)
+                    if isBusy {
+                        ProgressView()
+                            .progressViewStyle(.circular)
+                            .scaleEffect(0.8)
+                            .tint(.white)
+                    } else {
+                        Image(systemName: "power")
+                            .font(.system(size: 18, weight: .semibold))
+                            // match original offline icon color
+                            .foregroundColor(device.isOnline
+                                             ? .white
+                                             : (colorScheme == .dark ? .white : .black))
+                    }
                 }
             }
+            .contentShape(Circle())                           // full circle tappable
+            .frame(width: circleSize, height: circleSize)
+            .buttonStyle(PlainButtonStyle())
+            .disabled(isBusy || !device.isOnline)
         }
-        .buttonStyle(.plain)
-        .disabled(isBusy || !device.isOnline)   // 🚫 no hammer‑tapping
-    }
 
     // MARK: - Helpers ---------------------------------------------------------
 
