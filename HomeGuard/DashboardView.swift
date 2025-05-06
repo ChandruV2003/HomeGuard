@@ -1,43 +1,55 @@
-//
-//  DashboardView.swift
-//  HomeGuard
-//
-
 import SwiftUI
 
-struct DashboardView: View {
+// MARK: – Central sheet enum
+enum DashboardSheet: Identifiable, Equatable {
+    case led(Device), lcd, cam, dht, eventLog
+    case addAutomation, editAutomation(AutomationRule), editDevice(Device)
+    case securitySettings
 
-    // ------------------------------------------------------------
-    // MARK: – State
-    // ------------------------------------------------------------
+    var id: String {
+        switch self {
+        case .led(let d):            return "led"  + d.id.uuidString
+        case .lcd:                   return "lcd"
+        case .cam:                   return "cam"
+        case .dht:                   return "dht"
+        case .eventLog:              return "eventLog"
+        case .addAutomation:         return "addAutomation"
+        case .editAutomation(let r): return "editAuto" + r.id
+        case .editDevice(let d):     return "editDev"  + d.id.uuidString
+        case .securitySettings:      return "security"
+        }
+    }
+}
+
+struct DashboardView: View {
+    // -----------------------------------------------------------------------
+    // MARK: – State
+    // -----------------------------------------------------------------------
     @State private var devices: [Device]                 = []
     @State private var automationRules: [AutomationRule] = []
 
     @StateObject private var speechManager = SpeechManager()
     @StateObject private var logManager    = EventLogManager()
 
-    @State private var isConnected = false
+    @State private var isConnected  = false
+    @State private var isReordering = false
+    @State private var activeSheet: DashboardSheet?
 
-    // Context‑menus / sheets
-    @State private var showEditAutomation: AutomationRule?
-    @State private var deviceForEdit: Device?
-    @State private var showLog            = false
-    @State private var showAddAutomation  = false
-    @State private var showLCDSettings    = false
-    @State private var showCameraLive     = false
-    @State private var showSecuritySettings = false
-    @State private var isReordering       = false
-
-    // AI
+    // AI suggestion
     @State private var aiGeneratedAutomation: AutomationRule?
 
     // Firmware clock
     @State private var boardSimTime: Double = 0.0
-    @State private var sensorTimer = Timer.publish(every: 1,
-                                                   on: .main,
-                                                   in: .common).autoconnect()
 
-    // ---------- Security rule (fixed) ----------
+    // timers
+    @State private var sensorTimer =
+        Timer.publish(every: 3, on: .main, in: .common).autoconnect()
+
+    // Banner
+    @State private var banner: BannerData?
+    @State private var bannerTimer: Timer?
+
+    // fixed security rule (always index 0)
     @State private var securityAutomation = AutomationRule(
         id: UUID().uuidString,
         name: "Security System",
@@ -48,100 +60,40 @@ struct DashboardView: View {
         triggerTime: Date()
     )
 
-    // ---------- Banner ----------
-    @State private var banner: BannerData?
-    @State private var bannerTimer: Timer?
-
-    // ------------------------------------------------------------
-    // MARK: – View
-    // ------------------------------------------------------------
+    // -----------------------------------------------------------------------
+    // MARK: – Body
+    // -----------------------------------------------------------------------
     var body: some View {
-        let main = contentView
-            .toolbar { toolbarContent }
-            .onAppear(perform: initialLoad)
-            .onReceive(sensorTimer) { _ in periodicPoll() }
-            .overlay(
-                Group {
-                    if let banner = banner {
-                        BannerView(data: banner)
-                            .transition(.move(edge: .top).combined(with: .opacity))
-                            .zIndex(1)
-                    }
-                },
-                alignment: .top
-            )
-            .onDisappear { bannerTimer?.invalidate() }
+        NavigationView {
+            contentView                               // <── root of nav‑stack
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar { toolbarContent }           // <── attach toolbar HERE
+        }
+        .navigationViewStyle(.stack)
+        .overlay(bannerOverlay, alignment: .top)
 
-        return NavigationView { main }
-            .navigationViewStyle(.stack)
-            // ------------------------------------------------
-            // MARK: – Sheets
-            // ------------------------------------------------
-            .sheet(isPresented: $showAddAutomation) {
-                AddAutomationView(
-                    automationRules: $automationRules,
-                    inputDevices: filteredSensors,
-                    outputDevices: filteredOutputs
-                ) { _ in refreshAutomationRules() }
-            }
-            .sheet(item: $deviceForEdit) { device in
-                EditDeviceView(device: device) { updated in
-                    if let idx = devices.firstIndex(where: { $0.id == updated.id }) {
-                        devices[idx] = updated
-                    }
-                }
-            }
-            .sheet(item: $showEditAutomation) { rule in
-                if rule.name == "Security System" {
-                    SecuritySettingsView(rule: $securityAutomation)
-                } else {
-                    EditAutomationView(
-                        rule: rule,
-                        inputDevices: filteredSensors,
-                        outputDevices: filteredOutputs
-                    ) { updated in
-                        if let idx = automationRules.firstIndex(where: { $0.id == updated.id }) {
-                            automationRules[idx] = updated
-                        }
-                    }
-                }
-            }
-            .sheet(isPresented: $showLog) {
-                EventLogView(logManager: logManager)
-            }
-            .sheet(isPresented: $showLCDSettings) {
-                LCDSettingsView()
-            }
-            .sheet(isPresented: $showCameraLive) {
-                let url = URL(string: "http://\(Config.cameraIP):81/stream")!
-                CameraLivestreamView(streamURL: url)
-            }
-            .sheet(isPresented: $showSecuritySettings) {
-                SecuritySettingsView(rule: $securityAutomation)
-            }
-            // ------------------------------------------------
-            // MARK: – Propagate changes
-            // ------------------------------------------------
-            .onChange(of: devices) {
-                speechManager.currentDevices = devices
-                let ids = devices.map { $0.id.uuidString }
-                UserDefaults.standard.set(ids, forKey: "deviceOrder")
-            }
-            .onChange(of: automationRules) {
-                speechManager.currentAutomations = automationRules
-            }
-            .onReceive(NotificationCenter.default.publisher(for: .voiceCommandReceived)) {
-                processVoiceCommand(notification: $0)
-            }
-            .onReceive(logManager.$suggestedAutomation) { aiGeneratedAutomation = $0 }   // 🆕
+        .onAppear(perform: initialLoad)
+        .onReceive(sensorTimer) { _ in periodicPoll() }
+        .onDisappear { bannerTimer?.invalidate() }
 
+        // ---------- SINGLE SHEET ----------
+        .sheet(item: $activeSheet, content: sheetView)
+
+        // ---------- Propagation ----------
+        .onChange(of: devices)         { speechManager.currentDevices = devices }
+        .onChange(of: automationRules) { speechManager.currentAutomations = automationRules }
+        .onReceive(NotificationCenter.default.publisher(for: .voiceCommandReceived)) {
+            processVoiceCommand(notification: $0)
+        }
+        .onReceive(logManager.$suggestedAutomation) { aiGeneratedAutomation = $0 }
     }
 
-    // ------------------------------------------------------------
+    // -----------------------------------------------------------------------
     // MARK: – Content
-    // ------------------------------------------------------------
+    // -----------------------------------------------------------------------
     private var contentView: some View {
         ScrollView {
+            
             VStack(spacing: 16) {
                 HeaderView(title: "HomeGuard Dashboard")
 
@@ -153,30 +105,28 @@ struct DashboardView: View {
                     .padding(.horizontal)
 
                 SecuritySystemBannerView(rule: securityAutomation) {
-                    showSecuritySettings = true
+                    activeSheet = .securitySettings
                 }
                 .padding(.horizontal)
 
                 AutomationsAreaView(
                     automationRules: automationRules.filter { $0.name != "Security System" },
                     aiGeneratedAutomation: aiGeneratedAutomation,
-                    onAdd: { showAddAutomation = true },
-                    onAcceptAISuggestion: acceptAISuggestion,
-                    onDismissAISuggestion: { aiGeneratedAutomation = nil },
+                    onAdd: { activeSheet = .addAutomation },
+                    onAcceptAISuggestion: { self.acceptAISuggestion() },
+                    onDismissAISuggestion: {
+                        aiGeneratedAutomation = nil
+                        activeSheet = nil
+                    },
                     onContextAction: handleAutomationAction,
                     addEnabled: !devices.isEmpty
                 )
 
                 DevicesAreaView(
                     devices: $devices,
-                    onSelect: { device in
-                        switch device.deviceType {
-                        case .lcd:    showLCDSettings = true
-                        case .espCam: showCameraLive  = true
-                        default:      break
-                        }
-                    },
+                    onSelect: { _ in },
                     onContextAction: handleDeviceAction,
+                    onOpenSheet: { activeSheet = $0 },
                     logManager: logManager,
                     isReordering: isReordering
                 )
@@ -186,127 +136,115 @@ struct DashboardView: View {
             }
             .padding(.vertical)
         }
+        .scrollDisabled(isReordering)
     }
 
-    // ------------------------------------------------------------
+    // -----------------------------------------------------------------------
     // MARK: – Toolbar
-    // ------------------------------------------------------------
+    // -----------------------------------------------------------------------
+    // MARK: – Toolbar
     private var toolbarContent: some ToolbarContent {
         Group {
+            ToolbarItem(placement: .navigationBarLeading) {
+                Button { activeSheet = .eventLog } label: {
+                    Image(systemName: "clock.arrow.circlepath")
+                        .font(.title)       // larger
+                }
+            }
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button { isReordering.toggle() } label: {
                     Image(systemName: isReordering ? "checkmark" : "gearshape.fill")
-                        .font(.title)
-                }
-            }
-            ToolbarItem(placement: .navigationBarLeading) {
-                Button { showLog = true } label: {
-                    Image(systemName: "clock.arrow.circlepath")
-                        .font(.title2)
+                        .font(.title)       // larger
                 }
             }
         }
     }
 
-    // ------------------------------------------------------------
-    // MARK: – Initial & periodic work
-    // ------------------------------------------------------------
-    private func initialLoad() {
-        speechManager.logManager = logManager
+    // -----------------------------------------------------------------------
+    // MARK: – Sheet factory
+    // -----------------------------------------------------------------------
+    @ViewBuilder private func sheetView(for sheet: DashboardSheet) -> some View {
+        switch sheet {
 
-        if devices.isEmpty { devices = Device.defaultDevices() }
-        if !automationRules.contains(where: { $0.name == "Security System" }) {
-            automationRules.insert(securityAutomation, at: 0)
-        }
+        case .led(let dev):
+            LEDColorPickerView(devicePort: dev.port) { activeSheet = nil }
 
-        syncConnectivity()
-        refreshAutomationRules()
+        case .lcd:
+            LCDSettingsView()
 
-        // ---- AI suggestion ------------------------------------
-        ChatGPTAPI.fetchAutomation(prompt: "Suggest a new automation rule for my home") {
-            rule, err in
-            DispatchQueue.main.async {
-                if let r = rule {
-                    aiGeneratedAutomation = r
-                } else if let err = err {
-                    pushBanner(err)
+        case .cam:
+            CameraLivestreamView(
+                streamURL: URL(string: "http://\(Config.cameraIP):81/stream")!
+            )
+
+        case .dht:
+            DHT11ChartView()
+
+        case .eventLog:
+            EventLogView(logManager: logManager)
+
+        case .addAutomation:
+            AddAutomationView(
+                automationRules: $automationRules,
+                inputDevices: filteredSensors,
+                outputDevices: filteredOutputs
+            ) { _ in refreshAutomationRules() }
+
+        case .editAutomation(let rule):
+            if rule.name == "Security System" {
+                SecuritySettingsView(rule: $securityAutomation)
+            } else {
+                EditAutomationView(
+                    rule: rule,
+                    inputDevices: filteredSensors,
+                    outputDevices: filteredOutputs
+                ) { updated in
+                    if let idx = automationRules
+                        .firstIndex(where: { $0.id == updated.id }) {
+                        automationRules[idx] = updated
+                    }
                 }
             }
-        }
-    }
 
-    private func periodicPoll() {
-        syncConnectivity()
-
-        // 1) pull down sensor data as before…
-        NetworkManager.fetchSensorData { dict in
-            guard let dict = dict else { return }
-            DispatchQueue.main.async {
-                updateDeviceStatuses(with: dict)
-                if let st = dict["simTime"] as? Double {
-                    boardSimTime = st
+        case .editDevice(let dev):
+            EditDeviceView(device: dev) { updated in
+                if let idx = devices.firstIndex(where: { $0.id == updated.id }) {
+                    devices[idx] = updated
                 }
             }
+
+        case .securitySettings:
+            SecuritySettingsView(rule: $securityAutomation)
         }
-
-        // 2) fetch your logs *with* auth…
-        logManager.fetchDeviceLogs { logs in
-            DispatchQueue.main.async {
-                logManager.logs = logs.reversed()
-
-                // 3) **then** re‑run your AI suggestion against the new logs + device lists:
-                let sensors = filteredSensors
-                let outputs = filteredOutputs
-                logManager.analyzeLogsForAutomation(
-                    inputDevices: sensors,
-                    outputDevices: outputs
-                )
-            }
-        }
-
-        // 4) and still refresh any existing automations…
-        refreshAutomationRules()
     }
 
-
-    private func refreshAutomationRules() {
-        NetworkManager.fetchAutomationRules { fetched in
-            guard let fetched = fetched else { return }
-            DispatchQueue.main.async {
-                automationRules = mergeAutomationRules(
-                    local: automationRules,
-                    fetched: fetched
-                )
+    // -----------------------------------------------------------------------
+    // MARK: – Banner overlay
+    // -----------------------------------------------------------------------
+    private var bannerOverlay: some View {
+        Group {
+            if let banner = banner {
+                BannerView(data: banner)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .zIndex(1)
             }
         }
     }
 
-    // ------------------------------------------------------------
-    // MARK: – Banner helper
-    // ------------------------------------------------------------
-    private func pushBanner(_ text: String,
-                            style: BannerData.BannerStyle = .error) {
-        banner = BannerData(title: text, style: style)
-        bannerTimer?.invalidate()
-        bannerTimer = Timer.scheduledTimer(withTimeInterval: 3, repeats: false) { _ in
-            withAnimation { banner = nil }
-        }
-        withAnimation { } // trigger transition
-    }
-
-    // ------------------------------------------------------------
+    // -----------------------------------------------------------------------
     // MARK: – Context‑menu handlers
-    // ------------------------------------------------------------
-    private func handleAutomationAction(rule: AutomationRule,
-                                        action: AutomationContextAction) {
+    // -----------------------------------------------------------------------
+    private func handleAutomationAction(
+        rule: AutomationRule,
+        action: AutomationContextAction
+    ) {
         switch action {
         case .edit:
-            showEditAutomation = rule
+            activeSheet = .editAutomation(rule)
 
         case .delete:
             guard rule.name != "Security System" else {
-                pushBanner("Security System cannot be deleted.")
-                return
+                pushBanner("Security System cannot be deleted."); return
             }
             NetworkManager.deleteAutomationRule(uid: rule.id) { ok in
                 DispatchQueue.main.async {
@@ -330,15 +268,112 @@ struct DashboardView: View {
         }
     }
 
-    private func handleDeviceAction(device: Device,
-                                    action: DeviceContextAction) {
+    private func handleDeviceAction(
+        device: Device,
+        action: DeviceContextAction
+    ) {
         switch action {
         case .edit:
-            deviceForEdit = device
+            activeSheet = .editDevice(device)
         case .delete:
             pushBanner("Core devices cannot be deleted.")
         default:
             break
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // MARK: – Initial / periodic work
+    // -----------------------------------------------------------------------
+    private func initialLoad() {
+        speechManager.logManager = logManager
+
+        if devices.isEmpty { devices = Device.defaultDevices() }
+        if !automationRules.contains(where: { $0.name == "Security System" }) {
+            automationRules.insert(securityAutomation, at: 0)
+        }
+
+        syncConnectivity()
+        refreshAutomationRules()
+
+        ChatGPTAPI.fetchAutomation(prompt: "Suggest a new automation rule for my home") {
+            rule, err in
+            DispatchQueue.main.async {
+                if let r = rule
+                { aiGeneratedAutomation = r }
+                else if let err = err
+                { pushBanner(err) }
+            }
+        }
+    }
+
+    private func periodicPoll() {
+        syncConnectivity()
+
+        // 1 – sensor JSON
+        NetworkManager.fetchSensorData { dict in
+            guard let dict = dict else { return }
+            DispatchQueue.main.async {
+                updateDeviceStatuses(with: dict)
+                if let st = dict["simTime"] as? Double { boardSimTime = st }
+            }
+        }
+
+        // 2 – logs
+        logManager.fetchDeviceLogs { logs in
+            DispatchQueue.main.async {
+                logManager.logs = logs.reversed()
+                logManager.analyzeLogsForAutomation(
+                    inputDevices: filteredSensors,
+                    outputDevices: filteredOutputs
+                )
+            }
+        }
+
+        // 3 – rules
+        refreshAutomationRules()
+    }
+
+    private func refreshAutomationRules() {
+        NetworkManager.fetchAutomationRules { fetched in
+            guard let fetched = fetched else { return }
+            DispatchQueue.main.async {
+                automationRules = mergeAutomationRules(
+                    local: automationRules,
+                    fetched: fetched
+                )
+            }
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // MARK: – Banner helper
+    // -----------------------------------------------------------------------
+    private func pushBanner(
+        _ text: String,
+        style: BannerData.BannerStyle = .error
+    ) {
+        banner = BannerData(title: text, style: style)
+        bannerTimer?.invalidate()
+        bannerTimer = Timer.scheduledTimer(withTimeInterval: 3,
+                                           repeats: false) { _ in
+            withAnimation { banner = nil }
+        }
+        withAnimation { }      // trigger transition
+    }
+
+    // -----------------------------------------------------------------------
+    // MARK: – Helpers
+    // -----------------------------------------------------------------------
+    private var filteredSensors: [Device] {
+        devices.filter {
+            [.sensor, .temperature, .humidity, .motion].contains($0.deviceType)
+        }
+    }
+
+    private var filteredOutputs: [Device] {
+        devices.filter {
+            [.fan, .light, .servo, .buzzer, .statusLED, .door].contains($0.deviceType)
         }
     }
 
@@ -357,32 +392,16 @@ struct DashboardView: View {
         }
     }
 
-    // ------------------------------------------------------------
-    // MARK: – Helpers
-    // ------------------------------------------------------------
-    private var filteredSensors: [Device] {
-        devices.filter {
-            [.sensor, .temperature, .humidity, .motion].contains($0.deviceType)
-        }
-    }
-
-    private var filteredOutputs: [Device] {
-        devices.filter {
-            [.fan, .light, .servo, .buzzer, .statusLED, .door].contains($0.deviceType)
-        }
-    }
-
     private func processVoiceCommand(notification: Notification) {
         guard let info = notification.userInfo,
               let _ = info["command"] as? String,
               let full = info["fullText"] as? String else { return }
         _ = full.lowercased()
-        // The heavy lifting already happens inside SpeechManager.
+        // heavy lifting is inside SpeechManager
     }
 
     // ---------- Device‑status parsing ----------
     private func updateDeviceStatuses(with dict: [String: Any]) {
-
         // --- Temperature & humidity string build ---
         let tempStr: String
         if let v = dict["temperature"] as? Double {
@@ -432,7 +451,7 @@ struct DashboardView: View {
 
     private func updateDeviceStatus(port: String, isOn: Bool) {
         if let idx = devices.firstIndex(where: { $0.port == port }) {
-            devices[idx].isOn = isOn
+            devices[idx].isOn   = isOn
             devices[idx].status = isOn ? "On" : "Off"
         }
     }
@@ -440,7 +459,7 @@ struct DashboardView: View {
     private func updateServoStatus(port: String, angle: Int) {
         if let idx = devices.firstIndex(where: { $0.port == port }) {
             let open = angle > 5
-            devices[idx].isOn    = open
+            devices[idx].isOn   = open
             devices[idx].status = open ? "Opened" : "Closed"
         }
     }
@@ -454,9 +473,9 @@ struct DashboardView: View {
     }
 }
 
-// ------------------------------------------------------------
+// -----------------------------------------------------------------------
 // MARK: – Preview
-// ------------------------------------------------------------
+// -----------------------------------------------------------------------
 struct DashboardView_Previews: PreviewProvider {
     static var previews: some View {
         DashboardView()

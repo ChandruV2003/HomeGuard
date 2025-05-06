@@ -181,23 +181,24 @@ class MjpegStreamViewModel: NSObject, ObservableObject, URLSessionDataDelegate {
 
 struct CameraLivestreamView: View {
     let streamURL: URL
-
     @StateObject private var viewModel = MjpegStreamViewModel()
 
     var body: some View {
-        GeometryReader { geometry in
-            if let image = viewModel.image {
-                Image(uiImage: image)
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: geometry.size.width,
-                           height: geometry.size.height)
-                    .clipped()
-            } else {
-                Text("Loading Stream...")
-                    .frame(width: geometry.size.width,
-                           height: geometry.size.height)
+        GeometryReader { geo in
+            // ②  guarantee a minimum frame > 0 during sheet animation
+            ZStack {
+                if let image = viewModel.image {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFit()
+                } else {
+                    ProgressView("Loading Stream…")
+                }
             }
+            .frame(
+                width: max(geo.size.width, 1),
+                height: max(geo.size.height, 1)
+            )
         }
         .onAppear { viewModel.startStreaming(url: streamURL) }
         .onDisappear { viewModel.stopStreaming() }
